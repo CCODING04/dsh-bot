@@ -60,7 +60,7 @@ const $=id=>document.getElementById(id);
 const feed=$("feed");
 const MODES=["read-only","workspace-write","danger-full-access"]; // 与容器枚举一致（规格 C6），auto 不可选
 const MODE_LABEL={"read-only":"只读","workspace-write":"工作区写","danger-full-access":"完全访问"};
-const BLOCK_WHY={SANDBOX_ESCALATION_UNAVAILABLE:"无审批应答者，权限升级被拒",SANDBOX_ESCALATION_REJECTED:"权限升级被拒",SANDBOX_ESCALATION_CANCELLED:"权限升级被取消",AUTO_REVIEW_DENIED:"自动审查未通过",AUTO_REVIEW_FAILED:"自动审查失败"};
+const BLOCK_WHY={FS_SANDBOX_DENIED:"文件被沙箱只读策略拒绝",SANDBOX_ESCALATION_UNAVAILABLE:"无审批应答者，权限升级被拒",SANDBOX_ESCALATION_REJECTED:"权限升级被拒",SANDBOX_ESCALATION_CANCELLED:"权限升级被取消",AUTO_REVIEW_DENIED:"自动审查未通过",AUTO_REVIEW_FAILED:"自动审查失败"};
 // permission_blocked 是事后信号（CB4）：detail 形如 "<CODE> <ErrorName>: <reason>"
 function blockedText(detail){const code=detail.split(" ")[0];const why=BLOCK_WHY[code]||"未知权限错误";const rest=detail.slice(code.length).trim();return `被权限策略阻止（${why}）[${code}]${rest?"\n"+rest:""}`}
 function addBlocked(detail){const d=document.createElement("div");d.className="msg blocked";d.textContent=blockedText(detail);feed.appendChild(d);feed.scrollTop=feed.scrollHeight}

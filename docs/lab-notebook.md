@@ -15,8 +15,10 @@
 | EXP-007 | 2026-11-16 | 流程硬约束三层工程 | ✅ 通过（含 1 项时序发现） | `experiments/EXP-007-gates.md` |
 | EXP-008 | 2026-11-16 | U3-1 会话记忆 + --json 驱动（OQ-5 关闭） | ✅ 通过（含首跑顺序 bug 修复） | `experiments/EXP-008-session-memory.md` |
 | EXP-009 | 2026-11-16 | 角色方案调研（Lauren Tan 子代理设计） | ✅ 结论采纳（2 薄包装 + 技能即角色） | `experiments/EXP-009-role-design.md` |
+| EXP-010 | 2026-11-16 | 拦截台账基建（GAP-003 当日闭环） | ✅ 18/18 selftest + 首日 7 拦截/3 escape | `experiments/EXP-010-gate-telemetry.md` |
+EXP-010
 | EXP-011 | 2026-11-16 | permission_blocked 两形态实测（OQ-1 关闭） | ✅ 修正 FS_SANDBOX_DENIED 映射 | `experiments/EXP-011-permission-modes.md` |
-
+| EXP-010 | 2026-11-16 | 拦截台账基建（GAP-003 当日闭环） | ✅ 18/18 selftest + 首日 7 拦截/3 escape | `experiments/EXP-010-gate-telemetry.md` |
 ---
 
 ## EXP-001 · U1 断网容器闭环（2026-11-16）
@@ -72,4 +74,4 @@
 **方法**：browser-use 控制 ZCode 内置浏览器，认领用户已打开的 8787 标签页（不重复开新页）；fill+click 建 `gui-test` → fill+click 发真实 brief → waitFor 20s → domSnapshot 验证事件流 → `docker compose exec cat` 验产物。一次一个状态变更动作，每个 locator 先 `count()` 验唯一。
 **数据**：事件流渲染序 = 用户消息 → `状态：idle GUI 闭环完成`（bot 回复）→ `[step] dsh exited; answer head: GUI 闭环完成` → `[done]`；2s 轮询增量呈现新事件；产物 `/state/bots/gui-test/ws/gui-e2e.txt` = `browser-test-ok`。
 **结论**：GUI 全链通过。附带发现：用户在此之前已自行用 e2e bot 完成一次任务（页面留有完整事件史）——Web Chat 对真实用户可用。
-**方法沉淀**：GUI 测试协议 = 认领用户标签页（不新开）→ locator 唯一性验证 → 单动作单观察 → DOM 快照断言 + 容器产物断言双重判据。
+**方法沉淀**：GUI 测试协议 = 认领用户标签页（不新开）→ locator 唯一性验证 → 单动作单观察 → DOM 快照断言 + 容器产物断言双重判据。

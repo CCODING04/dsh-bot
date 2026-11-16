@@ -22,7 +22,11 @@ aside h4{margin:4px 0 8px;color:var(--mut);font-size:12px}
 .bot-item:hover{background:var(--bg)}
 .bot-item.on{background:var(--ac)}
 .dot{width:8px;height:8px;border-radius:50%;background:#9CA3AF}
-.dot.idle{background:var(--pri)}.dot.running{background:#F59E0B}.dot.failed{background:#EF4444}.dot.awaiting_approval{background:#3B82F6}
+.dot.idle{background:var(--pri)}.dot.running{background:#F59E0B}.dot.failed{background:#EF4444}
+.pmode{font-size:11px;line-height:1.4;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--mut);cursor:pointer;flex:none}
+.pmode:hover{border-color:var(--pri);color:var(--pri)}
+.pmode.danger{border-color:#DC2626;color:#DC2626}
+.msg.blocked{align-self:stretch;max-width:100%;border:1px solid #FDBA74;border-left:4px solid #DC2626;background:#FFF7ED;color:#9A3412;font-size:12px}
 #chat{flex:1;display:flex;flex-direction:column;min-width:0}
 #feed{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
 .msg{max-width:72%;padding:9px 13px;border-radius:10px;white-space:pre-wrap;word-break:break-word}
@@ -74,21 +78,38 @@ textarea{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-si
   </div>
 </main>
 <script>
-let bots=[],cur=null,knownEvt=0,timer=null;
+let bots=[],cur=null,knownEvt=0,timer=null,failNoted=false;
 const $=id=>document.getElementById(id);
 const feed=$("feed");
+const MODES=["read-only","workspace-write","danger-full-access"]; // 与容器枚举一致（规格 C6），auto 不可选
+const MODE_LABEL={"read-only":"只读","workspace-write":"工作区写","danger-full-access":"完全访问"};
+const BLOCK_WHY={SANDBOX_ESCALATION_UNAVAILABLE:"无审批应答者，权限升级被拒",SANDBOX_ESCALATION_REJECTED:"权限升级被拒",SANDBOX_ESCALATION_CANCELLED:"权限升级被取消",AUTO_REVIEW_DENIED:"自动审查未通过",AUTO_REVIEW_FAILED:"自动审查失败"};
+// permission_blocked 是事后信号（CB4）：detail 形如 "<CODE> <ErrorName>: <reason>"
+function blockedText(detail){const code=detail.split(" ")[0];const why=BLOCK_WHY[code]||"未知权限错误";const rest=detail.slice(code.length).trim();return `被权限策略阻止（${why}）[${code}]${rest?"\n"+rest:""}`}
+function addBlocked(detail){const d=document.createElement("div");d.className="msg blocked";d.textContent=blockedText(detail);feed.appendChild(d);feed.scrollTop=feed.scrollHeight}
 function add(cls,text){const d=document.createElement("div");d.className="msg "+cls;d.textContent=text;feed.appendChild(d);feed.scrollTop=feed.scrollHeight}
 async function api(p,opt){const r=await fetch(p,opt);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||r.status);return r.json()}
 async function loadBots(){try{bots=await api("/bots");}catch(e){bots=[]}
   $("botlist").innerHTML="";
-  for(const b of bots){const d=document.createElement("div");d.className="bot-item"+(cur===b.name?" on":"");
-    d.innerHTML=`<span>${b.name}</span><span class="dot ${b.status}" title="${b.status}"></span>`;
-    d.onclick=()=>{cur=b.name;knownEvt=0;feed.innerHTML="";add("evt",`已连接 bot「${b.name}」 · 工作区 ${b.workspace}`);hideSkNote();loadBots();loadSkills()};
+  for(const b of bots){const mode=b.permissionMode||"workspace-write";const d=document.createElement("div");d.className="bot-item"+(cur===b.name?" on":"");
+    d.innerHTML=`<span class="pmode${mode==="danger-full-access"?" danger":""}" title="权限模式：${mode}（点击循环切换）">${MODE_LABEL[mode]||mode}</span><span>${b.name}</span><span class="dot ${b.status}" title="${b.status}"></span>`;
+    d.querySelector(".pmode").onclick=ev=>{ev.stopPropagation();cycleMode(b)};
+    d.onclick=()=>{cur=b.name;knownEvt=0;failNoted=false;feed.innerHTML="";add("evt",`已连接 bot「${b.name}」 · 工作区 ${b.workspace} · 权限模式 ${MODE_LABEL[mode]||mode}`);hideSkNote();loadBots();loadSkills()};
     $("botlist").appendChild(d)}}
-async function createBot(){const n=$("newbot").value.trim();if(!n)return alert("填个名字");try{await api("/bots",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:n})});cur=n;knownEvt=0;feed.innerHTML="";add("evt",`bot「${n}」已创建`);$("newbot").value="";hideSkNote();loadBots();loadSkills()}catch(e){alert(e.message)}}
+async function cycleMode(b){const cur2=b.permissionMode||"workspace-write";const next=MODES[(MODES.indexOf(cur2)+1)%MODES.length];
+  try{const u=await api(`/bots/${b.name}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({permissionMode:next})});
+    if(cur===b.name)add("evt",`权限模式 → ${u.permissionMode}（approval 固定 never，改动下次 brief 生效）`);loadBots();
+  }catch(e){alert("切换权限模式失败："+e.message)}}
+async function createBot(){const n=$("newbot").value.trim();if(!n)return alert("填个名字");try{await api("/bots",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:n})});cur=n;knownEvt=0;failNoted=false;feed.innerHTML="";add("evt",`bot「${n}」已创建（默认权限模式：工作区写）`);$("newbot").value="";hideSkNote();loadBots();loadSkills()}catch(e){alert(e.message)}}
 async function send(){const t=$("text").value.trim();if(!t||!cur)return alert(cur?"输入内容":"先选/建一个 bot");$("text").value="";add("me",t);
   try{const b=await api(`/bots/${cur}/brief`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text:t})});add("bot",`状态：${b.status}\n${b.lastResult??"(无结果)"}`)}catch(e){add("evt","出错："+e.message)}}
-async function poll(){if(!cur)return;try{const b=await api("/bots/"+cur);for(const e of b.events.slice(knownEvt)){if(e.kind!=="created")add("evt",`[${e.kind}] ${e.detail}`)}knownEvt=b.events.length;const s=document.querySelector(".bot-item.on .dot");if(s)s.className="dot "+b.status}catch{}}
+async function poll(){if(!cur)return;try{const b=await api("/bots/"+cur);
+  for(const e of b.events.slice(knownEvt)){
+    if(e.kind==="permission_blocked")addBlocked(e.detail);
+    else if(e.kind!=="created")add("evt",`[${e.kind}] ${e.detail}`)}
+  knownEvt=b.events.length;
+  if(b.status==="failed"){if(!failNoted){add("evt","此 bot 处于 failed：失败重试将开新会话（CB3）——再次发送 brief 不延续失败轮次上下文");failNoted=true}}else failNoted=false;
+  const s=document.querySelector(".bot-item.on .dot");if(s)s.className="dot "+b.status}catch{}}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function hideSkNote(){$("sknote").style.display="none"}
 // CB6：技能目录消息是入会话日志的历史快照，变更后旧会话看不到——每次增删都提示

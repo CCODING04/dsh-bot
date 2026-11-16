@@ -10,8 +10,14 @@ export type BotEvent = {
   detail: string;
 };
 
-/** 映射为 permission_blocked 的 tool_result.error.code 全集（CB4）。 */
+/**
+ * 映射为 permission_blocked 的 tool_result.error.code 全集（CB4 + 实测修正）。
+ * 两种阻断形态：沙箱直接拒（FS_SANDBOX_DENIED，read-only 下写操作的第一形态，
+ * 2026-11-16 容器实测补入——此前只有模型带 sandbox_permissions 升权重试被拒时的
+ * SANDBOX_ESCALATION_* 五码，导致常见路径无事件）；以及升权请求被策略拒。
+ */
 export const PERMISSION_BLOCKED_CODES: ReadonlySet<string> = new Set([
+  "FS_SANDBOX_DENIED",
   "SANDBOX_ESCALATION_UNAVAILABLE",
   "SANDBOX_ESCALATION_REJECTED",
   "SANDBOX_ESCALATION_CANCELLED",

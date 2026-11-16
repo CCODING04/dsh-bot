@@ -161,24 +161,25 @@ test("解析器：runner 级失败 —— 只有单个 error 事件、无 final�
 
 // ---- U3：permission_blocked 映射（CB4）与 spawn 参数契约（CB1/CB2）----
 
-test("permission_blocked 映射：SANDBOX_ESCALATION/AUTO_REVIEW 码映射，其他错误码不映射", async () => {
+test("permission_blocked 映射：FS_SANDBOX_DENIED/SANDBOX_ESCALATION/AUTO_REVIEW 码映射，其他错误码不映射", async () => {
   const { parseDshJsonStream, dshResultEvents, PERMISSION_BLOCKED_CODES } = await import("../src/drivers.ts");
-  const mkToolResult = (code: string) =>
-    JSON.stringify({ type: "tool_result", callId: "c1", status: "error", result: "[sandbox: file access denied]", error: { name: "SandboxEscalationError", code, reason: "escalation unavailable" } });
+  const mkToolResult = (code: string, name = "SandboxEscalationError") =>
+    JSON.stringify({ type: "tool_result", callId: "c1", status: "error", result: "[sandbox: file access denied]", error: { name, code, reason: "escalation unavailable" } });
   const r = parseDshJsonStream(
     [
       JSON.stringify({ type: "session", sessionId: "s1", cwd: "/ws" }),
       mkToolResult("SANDBOX_ESCALATION_UNAVAILABLE"),
+      mkToolResult("FS_SANDBOX_DENIED", "FsError"),
       mkToolResult("AUTO_REVIEW_DENIED"),
       mkToolResult("SOME_OTHER_TOOL_ERROR"),
       JSON.stringify({ type: "final", sessionId: "s1", reason: { kind: "error" }, text: "" }),
     ],
     1,
   );
-  assert.deepEqual(r.toolResults.map((t) => t.code), ["SANDBOX_ESCALATION_UNAVAILABLE", "AUTO_REVIEW_DENIED", "SOME_OTHER_TOOL_ERROR"]);
+  assert.deepEqual(r.toolResults.map((t) => t.code), ["SANDBOX_ESCALATION_UNAVAILABLE", "FS_SANDBOX_DENIED", "AUTO_REVIEW_DENIED", "SOME_OTHER_TOOL_ERROR"]);
   const events = dshResultEvents(r, "2026-11-16T00:00:00Z");
   const blocked = events.filter((e) => e.kind === "permission_blocked");
-  assert.equal(blocked.length, 2);
+  assert.equal(blocked.length, 3);
   for (const e of blocked) {
     const code = e.detail.split(" ")[0];
     assert.ok(PERMISSION_BLOCKED_CODES.has(code));

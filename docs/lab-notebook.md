@@ -15,6 +15,7 @@
 | EXP-007 | 2026-11-16 | 流程硬约束三层工程 | ✅ 通过（含 1 项时序发现） | `experiments/EXP-007-gates.md` |
 | EXP-008 | 2026-11-16 | U3-1 会话记忆 + --json 驱动（OQ-5 关闭） | ✅ 通过（含首跑顺序 bug 修复） | `experiments/EXP-008-session-memory.md` |
 | EXP-009 | 2026-11-16 | 角色方案调研（Lauren Tan 子代理设计） | ✅ 结论采纳（2 薄包装 + 技能即角色） | `experiments/EXP-009-role-design.md` |
+| EXP-011 | 2026-11-16 | permission_blocked 两形态实测（OQ-1 关闭） | ✅ 修正 FS_SANDBOX_DENIED 映射 | `experiments/EXP-011-permission-modes.md` |
 
 ---
 

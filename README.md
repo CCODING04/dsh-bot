@@ -22,7 +22,7 @@ node src/cli.ts logs demo
 - [x] **U1** 骨架 + 沙箱 + stub 证据链（3/3 测试；`docs/phase-1-report.md`）
 - [x] **U2** 真实 dsh 驱动（GLM via bigmodel，容器 E2E 产物落盘；`docs/phase-2-report.md`）
 - [x] **U3** 审批 × 会话 × 技能（PR #1、#6、#7；报告 docs/phase-3-report.md）
-- [ ] **U4** 多 bot group 协作（三职责起步：coordinator / engineer / reviewer）
+- [ ] **U4** 多 bot group 协作（T-G0 组建 ✓ / T-G1 直通 ✓ / T-G2 dispatch 编排 ✓；T-G3 否定回路 + EXP-013 进行中）
 
 ## 布局
 

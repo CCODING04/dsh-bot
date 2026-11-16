@@ -52,3 +52,9 @@
 - **决策**：证据溯源的 L2 重放校验（CI 内重新执行命令并比对输出哈希）暂缓——回归样本集与审计日志口径的输出含非确定片段（计数随审计日志状态变化、时间戳），重放必然不一致，会产生系统性误报
 - **当前防线**：L1 完整性校验（outputText 哈希 + PNG 字节绑定 pngSha256 换芯检测）+ 捕获工具唯一化（agent 无法参与文本撰写）已覆盖「手工构造」与「事后换芯」两类伪造；重放针对的剩余形态是「陈旧证据冒充新运行」——由 meta 的 HEAD/时间戳字段供人工核验
 - **收口条件**：gate-selftest/gate-stats 输出改造为确定性结构化格式（如 --json 固定 schema）后启用重放，届时 SAFE_REPLAY 白名单按命令粒度启用
+
+### EXP-013（2026-11-17）· T-G2 真 GLM 三 bot 否定回路 E2E
+- **假设**：三职责 dispatch 编排（coordinator→engineer→reviewer）在真 GLM 下可完成正向链路并触发否定回路
+- **方法**：E2E 容器（dsh-bot:e2e-v5，含 parseVerdict 同义词修复 + 截断上限 10000）dispatch 种子任务 → 30s 轮询 → 产物核对
+- **数据**：rounds=1，verdict="pass"（reviewer 独立执行 wc -c/cmp/sha256sum 三项验证），state=done
+- **结论**：T-G2 正向链路 ✓。否定回路（种子缺陷）待 T-G3 后续验证（需要精心设计工程 bot 可能出错的种子任务）

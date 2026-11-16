@@ -45,7 +45,7 @@
 | **U1** 骨架 + 沙箱 | Docker 镜像、daemon、CLI、stub driver | 容器内 `dsh-bot create demo && dsh-bot brief demo "..."` 走通（stub） |
 | **U2** 真实闭环 | dsh driver 接入（headless 一发式执行），真实 LLM 完成一个文件任务 | 需要 `DEEPSEEK_API_KEY`（用户提供后注入）；产物落 bot 工作区 |
 | **U3** 审批 + 技能 | approval 事件 surfaced；bot 工作区技能安装路径。U3-2 进度 2026-11-16：per-bot permissionMode 三值配置 + daemon 每调用透传 + PATCH /bots/:n + permission_blocked web 呈现（见 `docs/u3-integration-spec.md` §3.2/§3.3）。U3-3 进度：每 bot 工作区 `.dsh/skills/<name>/SKILL.md` 技能 CRUD（frontmatter 校验 K3）+ `git init` 钉 projectRoot（C5/K6，git 不可用降级）+ CLI `skills` 子命令 + web 技能面板（增删后提示"建议新会话"，CB6） | 触发一次需审批操作 → CLI 可见待办 |
-| **U4** 多 bot 协作 | group 编排，多 bot 并行各领子任务 | 两 bot 各出产物且互不污染 |
+| **U4** 多 bot 协作 | group 编排，多 bot 并行各领子任务。进度 2026-11-16（T-G0/T-G1 实现层）：bot group 注册/查询/解散贯通 daemon/CLI/REST/web 三面（`Group = {name, members, createdAt, events}` 随 groups.json 持久化，成员校验：须为已存在 bot、去重 ≥2）；三职责角色技能模板见 `docs/u4-group-design.md` §3。dispatch 编排（coordinator 决策）属 T-G2，接口已预留不实现 | 两 bot 各出产物且互不污染 |
 
 ## 4. 流程验证矩阵（对齐《实施方案》T1–T7）
 

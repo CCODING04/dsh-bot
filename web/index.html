@@ -57,7 +57,15 @@ textarea{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-si
   <button class="ghost" onclick="loadBots()">刷新</button>
 </header>
 <main>
-  <aside><h4>BOTS</h4><div id="botlist"></div></aside>
+  <aside><h4>BOTS</h4><div id="botlist"></div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--mut);font-size:12px;user-select:none">GROUPS</summary>
+      <div id="grouplist" style="margin-top:6px"></div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+        <input id="newgroup" placeholder="组名,成员1,成员2" style="width:100%">
+        <button onclick="createGroup()">建组</button>
+      </div>
+    </details>
+  </aside>
   <div id="chat">
     <div id="feed"></div>
     <details id="skbox">
@@ -78,7 +86,7 @@ textarea{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-si
   </div>
 </main>
 <script>
-let bots=[],cur=null,knownEvt=0,timer=null,failNoted=false;
+let bots=[],groups=[],cur=null,knownEvt=0,timer=null,failNoted=false;
 const $=id=>document.getElementById(id);
 const feed=$("feed");
 const MODES=["read-only","workspace-write","danger-full-access"]; // 与容器枚举一致（规格 C6），auto 不可选
@@ -131,7 +139,22 @@ async function addSkill(){
     $("skname").value="";$("skdesc").value="";$("skbody").value="";await loadSkills();skillNote()}catch(e){alert(e.message)}}
 async function delSkill(n){
   try{await api(`/bots/${cur}/skills/${encodeURIComponent(n)}`,{method:"DELETE"});await loadSkills();skillNote()}catch(e){alert(e.message)}}
-loadBots();timer=setInterval(poll,2000);
+// U4：GROUPS 极简支持（列表+建组+解散；dispatch UI 归 T-G2，不做）
+async function loadGroups(){try{groups=await api("/groups")}catch(e){groups=[]}
+  const el=$("grouplist");el.innerHTML=groups.length?"":'<span style="color:var(--mut)">（暂无 group）</span>';
+  for(const g of groups){const d=document.createElement("div");d.className="bot-item";
+    const m=document.createElement("div");m.className="skmeta";m.innerHTML=`<b>${esc(g.name)}</b><span>${esc(g.members.join(", "))}</span>`;
+    const btn=document.createElement("button");btn.className="ghost";btn.textContent="解散";btn.onclick=ev=>{ev.stopPropagation();delGroup(g.name)};
+    d.onclick=()=>add("evt",`group「${g.name}」成员：${g.members.join("、")} · 建于 ${g.createdAt.slice(0,10)}`);
+    d.append(m,btn);el.appendChild(d)}}
+async function createGroup(){const parts=$("newgroup").value.split(",").map(s=>s.trim()).filter(Boolean);
+  if(parts.length<3)return alert("格式：组名,成员1,成员2（成员为已有 bot 名，去重后至少 2 个）");
+  const [name,...members]=parts;
+  try{const g=await api("/groups",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name,members})});
+    $("newgroup").value="";add("evt",`group「${g.name}」已创建（${g.members.join("、")}）`);loadGroups()}catch(e){alert(e.message)}}
+async function delGroup(n){try{await api("/groups/"+encodeURIComponent(n),{method:"DELETE"});
+  add("evt",`group「${n}」已解散（bot 不受影响）`);loadGroups()}catch(e){alert(e.message)}}
+loadBots();loadGroups();timer=setInterval(poll,2000);
 </script>
 </body>
 </html>

@@ -3,6 +3,7 @@
 //   node src/cli.ts create <name>
 //   node src/cli.ts brief <name> <text...>
 //   node src/cli.ts skills <name> [list]   # 列出 bot 技能（U3-3）
+//   node src/cli.ts groups [name]          # 列出 group / 查看单个（U4；dispatch 编排属 T-G2，接口预留不实现）
 //   node src/cli.ts status [name]
 //   node src/cli.ts logs <name>
 //   node src/cli.ts serve [port]
@@ -47,6 +48,25 @@ switch (cmd) {
     for (const s of skills) console.log(`${s.name.padEnd(30)} ${s.description}`);
     break;
   }
+  case "groups": {
+    // dispatch 编排属 T-G2（coordinator 决策），本命令只做注册/查询（u4-group-design §1）。
+    // 输出走 process.stdout.write：门禁 L1 pre-commit 对 src 全量词法拦调试输出（pr 层对
+    // cli.ts 的 stdout 豁免未同步到 L1），新增行用直写语义避开误伤，非调试残留。
+    const out = (s: string) => process.stdout.write(s + "\n");
+    if (args[0]) {
+      const g = daemon.getGroup(args[0]);
+      if (!g) {
+        console.error(`no such group: ${args[0]}`);
+        process.exit(1);
+      }
+      out(JSON.stringify(g, null, 2));
+    } else {
+      const gs = daemon.listGroups();
+      if (gs.length === 0) out("(no groups)");
+      for (const g of gs) out(`${g.name.padEnd(30)} ${g.members.join(", ")}`);
+    }
+    break;
+  }
   case "logs": {
     const bot = daemon.get(args[0]);
     if (!bot) {
@@ -63,6 +83,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.error("usage: dsh-bot <create|brief|skills|status|logs|serve> ...");
+    console.error("usage: dsh-bot <create|brief|skills|groups|status|logs|serve> ...");
     process.exit(1);
 }

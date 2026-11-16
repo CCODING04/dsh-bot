@@ -137,12 +137,83 @@ function scanConflictMarkers(files) {
   }
 }
 
+/**
+ * 检查 7（PR 写法规范，用户 2026-11-16 定）：六节结构、UI 改动截图认证、
+ * 文件引用仅限 codebase 内（反引号路径与链接均须真实存在）、项目内术语编号禁止裸引用。
+ * 输入：`pr <number>`（gh pr view）或 `pr --body-file <f> --files <csv>`（旁路，供 selftest）。
+ */
+function checkPrBody(rawBody, files) {
+  // 净化：HTML 注释（模板占位符）与围栏代码块不参与写法判断（用户 2026-11-16 指令：注释会影响判断）
+  const body = rawBody
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/^#{1,6}\s+```[\s\S]*?```$/gm, "");
+  const problems = [];
+  for (const sec of ["## Why", "## What changed", "## Scope", "## Verification"]) {
+    if (!body.includes(sec)) problems.push(`缺少必需章节「${sec}」`);
+  }
+  const touchesWeb = files.some((x) => /^web\//.test(x));
+  if (touchesWeb && !/!\[|<img[\s>]/.test(body)) {
+    problems.push("改动含 web/（UI）但未附截图认证（![...](...) 或 <img>）——功能认证硬要求");
+  }
+  for (const m of body.matchAll(/`([^`\n]+)`/g)) {
+    const p = m[1].trim();
+    if (!/^(src|test|web|scripts|docs|docker|\.github|\.zcode|\.githooks)\//.test(p)) continue;
+    if (!existsSync(p)) problems.push(`引用了 codebase 外或不存在的文件：\`${p}\``);
+  }
+  for (const m of body.matchAll(/\]\(([^)\s]+)\)/g)) {
+    const href = m[1].trim();
+    if (/^https?:\/\//.test(href)) {
+      if (!/^https?:\/\/github\.com\/CCODING04\/dsh-bot\//.test(href)) {
+        problems.push(`PR 引用了 codebase 以外的链接（禁止）：${href}`);
+      }
+    } else if (!href.startsWith("#") && !href.startsWith("mailto:")) {
+      if (!existsSync(href.replace(/^\.\//, ""))) problems.push(`相对链接指向不存在的文件：${href}`);
+    }
+  }
+  for (const line of body.split(/\r?\n/)) {
+    const bare = line.match(/\b(\d+[ab]|CB-?\d+|OQ-\d+|EXP-\d+|T-G\d+|GAP-\d+)\b/);
+    if (bare && !/docs\/|github\.com\/CCODING04\/dsh-bot|（/.test(line)) {
+      problems.push(`术语「${bare[1]}」裸引用：该行须附 docs/ 路径、仓库链接或中文括号展开（如「CB4（docs/u3-integration-spec.md §2）」）`);
+    }
+  }
+  if (problems.length) {
+    fail(`PR 写法规范 ${problems.length} 处不合规：\n  - ${problems.join("\n  - ")}`, { rule: "pr-body", severity: "low" });
+  }
+}
+
+async function runPrMode(rest) {
+  let body;
+  let files;
+  const bodyIdx = rest.indexOf("--body-file");
+  const filesIdx = rest.indexOf("--files");
+  if (bodyIdx >= 0 && filesIdx >= 0) {
+    body = readFileSync(rest[bodyIdx + 1], "utf8");
+    files = rest[filesIdx + 1].split(",").map((s) => s.trim()).filter(Boolean);
+  } else {
+    const num = rest.find((x) => /^\d+$/.test(x));
+    if (!num) fail("pr 模式需要 <pr-number>，或 --body-file <f> --files <csv>（自测旁路）");
+    const parsed = JSON.parse(
+      execFileSync("gh", ["pr", "view", num, "--json", "body,files"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }),
+    );
+    body = parsed.body ?? "";
+    files = (parsed.files ?? []).map((x) => x.path);
+  }
+  checkPrBody(body, files);
+  console.log(`[process-gate] PR 写法通过：${files.length} 个文件范围 / 六节 / 截图认证 / codebase 内引用 / 术语展开`);
+}
+
 const [mode, ...rest] = process.argv.slice(2);
 if (mode === "commit-msg") {
   const msgFile = rest[0];
   if (!msgFile) fail("commit-msg 需要 <msg-file> 参数");
   const subject = readFileSync(msgFile, "utf8").split(/\r?\n/)[0];
   checkSubject(subject);
+  process.exit(0);
+}
+
+if (mode === "pr") {
+  await runPrMode(rest);
   process.exit(0);
 }
 
@@ -175,4 +246,4 @@ if (mode === "ci") {
   process.exit(0);
 }
 
-fail(`未知模式：${mode}（期望 commit-msg|pre-commit|ci）`);
+fail(`未知模式：${mode}（期望 commit-msg|pre-commit|ci|pr）`);

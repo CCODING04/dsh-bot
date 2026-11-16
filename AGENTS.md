@@ -29,6 +29,8 @@
 
 规则已固化为三层门禁，违反会被机器拦截而非靠记忆：**L1** `scripts/process-gate.mjs`（提交信息规范 / 密钥值形态扫描 / Dockerfile 吞错 / 档案交叉引用 / README 里程碑同步 / 行为改动带文档）经 `.githooks/`（`core.hooksPath` 已启用，仓库本地）在 commit-msg 与 pre-commit 强制；**L2** `.github/workflows/ci.yml` 在 push/PR 上重跑全部检查 + `npm test`（且为分支保护 required check）；**L3** `.zcode/config.json` 的 PreToolUse(Bash) hook 调 `scripts/guard-bash.mjs` 拦危险 shell。设计与验收数据见 `docs/process-enforcement-plan.md` 与 EXP-007。修改门禁规则 = 改上述脚本并同步过一遍坏样本验收，不是加一段新文字。
 
+**围栏遥测（自动记录）**：每次拦截/漏网自动落 `.gate-ledger/events.jsonl`（本地 gitignored，context 强制脱敏）；`node scripts/gate-selftest.mjs` 是围栏样本电池（改门禁规则必须跑绿并提交对应样本）；`node scripts/gate-stats.mjs` 出效能指标（口径四条随输出，含"已发现错误中的拦截率"限定）。每个 escape 走飞轮三件套：EXP 条目 + 规则修正 + selftest 样本（见 `docs/gate-ledger.md`）。PR 的 Verification 节应附本期 gate-stats 差量。
+
 ## 维护角色（职能约定，2026-11-16 定；U4 后做机器账号隔离）
 
 参照 Lauren Tan 的实践（两个循环 + 三职责起步，见 EXP-009 调研存档）：**角色是"读什么技能 + 什么权限"的函数，不是 N 份 persona 文件**。本仓库只有两个薄 agent 包装：`.zcode/agents/poteto-agent.md`（通用委派：先读 poteto-mode 全文）与 `.zcode/agents/comment-sicko.md`（只读审查特例）；知识活在 `.zcode/skills/`，按需路由。

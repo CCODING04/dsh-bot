@@ -582,3 +582,271 @@ test("模板安装：listRoleTemplates 输出可直接 putSkill，listSkills 可
     await rm(stateDir, { recursive: true, force: true });
   }
 });
+
+// ---- U4/T-G2：dispatch 编排（coordinator→engineer→reviewer 串行委派 + 回环上限 2 + 状态机）----
+
+type ScriptedReply = string | ((call: number) => string);
+
+/** 按 bot 名出词的 scripted driver：记录每次 (bot, brief)，可指定某 bot 永远失败。 */
+function scriptedDispatchDriver(
+  replies: Record<string, ScriptedReply>,
+  log: Array<{ bot: string; brief: string }>,
+  opts: { failBot?: string } = {},
+): Driver {
+  const calls = new Map<string, number>();
+  return {
+    name: "scripted-dispatch",
+    async run(botName, _ws, brief) {
+      log.push({ bot: botName, brief });
+      const n = (calls.get(botName) ?? 0) + 1;
+      calls.set(botName, n);
+      if (opts.failBot === botName) return { ok: false, summary: `scripted failure in ${botName}` };
+      const r = replies[botName];
+      return { ok: true, summary: typeof r === "function" ? r(n) : (r ?? "ok") };
+    },
+  };
+}
+
+async function threeRoleGroup(driver: Driver, name = "dev-team") {
+  const { d, stateDir } = await freshDaemon(driver);
+  for (const n of ["coordinator-x", "engineer-y", "reviewer-z"]) await d.create(n);
+  await d.createGroup(name, ["coordinator-x", "engineer-y", "reviewer-z"]);
+  return { d, stateDir };
+}
+
+/** 轮询到 dispatch 收敛（终态或失败），超时即断言失败。 */
+async function waitSettled(d: BotDaemon, group: string) {
+  for (let i = 0; i < 2000 && d.getGroup(group)?.status === "dispatching"; i++) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  assert.notEqual(d.getGroup(group)?.status, "dispatching", "dispatch 应在限时内收敛");
+}
+
+test("dispatch 编排：三阶段严格串行（coordinator→engineer→reviewer），各 brief 携带角色技能名与上游输出", async () => {
+  const mission = JSON.stringify({ objective: "实现 add(a,b) 并配单测", owner: "engineer-y", done_condition: "node math.test.js 通过", artifacts_expected: ["math.js"] });
+  const engineerOut = "已实现 math.js；验证命令 node math.test.js；预期输出 3=3";
+  const verdict = JSON.stringify({ verdict: "approve", findings: [] });
+  const log: Array<{ bot: string; brief: string }> = [];
+  const { d, stateDir } = await threeRoleGroup(
+    scriptedDispatchDriver({ "coordinator-x": mission, "engineer-y": engineerOut, "reviewer-z": verdict }, log),
+  );
+  const r = await d.dispatch("dev-team", "给玩具模块加一个加法函数");
+  assert.deepEqual(r, { dispatchId: "1", state: "running" }, "异步受理：返回 dispatchId 与 running");
+  await waitSettled(d, "dev-team");
+  assert.deepEqual(log.map((l) => l.bot), ["coordinator-x", "engineer-y", "reviewer-z"], "三阶段按角色顺序严格串行");
+  assert.match(log[0].brief, /coordinator-brief/);
+  assert.match(log[0].brief, /加法函数/, "coordinator 收到原始需求");
+  assert.match(log[1].brief, /engineer-discipline/);
+  assert.ok(log[1].brief.includes(mission), "coordinator 回复全文透传为 engineer 简报（v0 不解析）");
+  assert.match(log[2].brief, /reviewer-verdict/);
+  assert.ok(log[2].brief.includes(engineerOut), "engineer 产物自述进入 reviewer 审查输入");
+  const disp = d.getGroup("dev-team")!.dispatches[0];
+  assert.deepEqual(
+    { state: disp.state, rounds: disp.rounds, verdict: disp.verdict },
+    { state: "done", rounds: 1, verdict },
+  );
+  assert.ok(disp.objective.includes("加法函数") && disp.dispatchedAt, "GroupDispatch 形状完整");
+  assert.equal(d.getGroup("dev-team")!.status, "done", "approve → 组终态 done");
+  // T-G2 事件流序（events[0] 是建组 created）：dispatch → brief(c) → done(c) → brief(e) → done(e) → brief(r) → done(r) → group_summary
+  const g = d.getGroup("dev-team")!;
+  assert.deepEqual(
+    g.events.slice(1).map((e) => e.kind),
+    ["step", "brief_received", "done", "brief_received", "done", "brief_received", "done", "step"],
+  );
+  assert.match(g.events[1].detail, /dispatch 1 started/);
+  assert.match(g.events[2].detail, /stage=coordinator/);
+  assert.match(g.events.at(-1)!.detail, /group_summary.*state=done/);
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("dispatch 回环上限 2：两轮 request-changes → engineer 再委派一次、reviewer 重审后终态 needs-rework", async () => {
+  const mission = "任务简报：修 off-by-one";
+  const v1 = JSON.stringify({ verdict: "request-changes", findings: [{ severity: "high", location: "math.js:1", issue: "加法写成减法", evidence: "node math.test.js 输出 0" }] });
+  const v2 = JSON.stringify({ verdict: "request-changes", findings: [{ severity: "high", location: "math.js:2", issue: "仍未修", evidence: "test 仍红" }] });
+  const outs = ["第一版产物自述", "修复版产物自述"];
+  const log: Array<{ bot: string; brief: string }> = [];
+  const { d, stateDir } = await threeRoleGroup(
+    scriptedDispatchDriver(
+      { "coordinator-x": mission, "engineer-y": (n) => outs[n - 1] ?? "第三版", "reviewer-z": (n) => (n === 1 ? v1 : v2) },
+      log,
+    ),
+  );
+  await d.dispatch("dev-team", "种子缺陷任务");
+  await waitSettled(d, "dev-team");
+  assert.deepEqual(
+    log.map((l) => l.bot),
+    ["coordinator-x", "engineer-y", "reviewer-z", "engineer-y", "reviewer-z"],
+    "request-changes 只回环一次（共 2 轮），不多委派",
+  );
+  assert.ok(log[3].brief.includes(v1) && log[3].brief.includes(outs[0]), "第二轮 engineer 简报带上轮产物与裁决");
+  const allDetails = d.getGroup("dev-team")!.events.map((e) => e.detail).join("\n");
+  assert.match(allDetails, /stage=engineer-r2/);
+  assert.match(allDetails, /stage=reviewer-r2/, "回环阶段在事件流中可辨");
+  assert.ok(log[4].brief.includes(outs[1]), "reviewer 重审收到修复后产物");
+  const disp = d.getGroup("dev-team")!.dispatches[0];
+  assert.equal(disp.rounds, 2);
+  assert.equal(disp.state, "needs-rework");
+  assert.equal(disp.verdict, v2, "verdict 存终轮裁决全文");
+  assert.equal(d.getGroup("dev-team")!.status, "needs-rework");
+  assert.match(d.getGroup("dev-team")!.events.at(-1)!.detail, /state=needs-rework/);
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("dispatch 回环后修复通过：第二轮 approve → 终态 done（reviewer 重新裁决生效）", async () => {
+  const v1 = JSON.stringify({ verdict: "request-changes", findings: [{ severity: "low", location: "a.js:1", issue: "缺注释", evidence: "目测" }] });
+  const v2 = JSON.stringify({ verdict: "approve", findings: [] });
+  const log: Array<{ bot: string; brief: string }> = [];
+  const { d, stateDir } = await threeRoleGroup(
+    scriptedDispatchDriver(
+      { "coordinator-x": "简报", "engineer-y": (n) => `产物 v${n}`, "reviewer-z": (n) => (n === 1 ? v1 : v2) },
+      log,
+    ),
+  );
+  await d.dispatch("dev-team", "任务");
+  await waitSettled(d, "dev-team");
+  assert.equal(log.length, 5, "回环一次后 reviewer 批准，停止");
+  const disp = d.getGroup("dev-team")!.dispatches[0];
+  assert.deepEqual({ state: disp.state, rounds: disp.rounds, verdict: disp.verdict }, { state: "done", rounds: 2, verdict: v2 });
+  assert.equal(d.getGroup("dev-team")!.status, "done");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("dispatch 不阻塞其他 bot：coordinator 阶段挂起时，组外 bot 的 brief 正常并行完成", async () => {
+  let releaseCoordinator: () => void = () => {};
+  const coordinatorGate = new Promise<void>((r) => (releaseCoordinator = r));
+  const driver: Driver = {
+    name: "gated-dispatch",
+    async run(botName) {
+      if (botName === "coordinator-x") await coordinatorGate;
+      return { ok: true, summary: botName === "coordinator-x" ? "coord done" : "x" };
+    },
+  };
+  const until = async (pred: () => boolean) => {
+    for (let i = 0; i < 400 && !pred(); i++) await new Promise((r) => setTimeout(r, 5));
+    assert.ok(pred(), "condition not reached");
+  };
+  const { d, stateDir } = await threeRoleGroup(driver);
+  await d.create("solo");
+  await d.dispatch("dev-team", "任务");
+  await until(() => d.get("coordinator-x")?.status === "running");
+  const solo = await d.brief("solo", "独立任务");
+  assert.equal(solo.status, "idle", "组外 bot 不受 dispatch 影响，正常完成");
+  assert.equal(d.get("coordinator-x")?.status, "running", "coordinator 此刻仍在执行（未被打断）");
+  releaseCoordinator();
+  await waitSettled(d, "dev-team");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("dispatch 状态机守门：缺三角色/未知组/空 objective/重入拒绝；dispatches 随 groups.json 持久化", async () => {
+  const log: Array<{ bot: string; brief: string }> = [];
+  const driver = scriptedDispatchDriver(
+    { "coordinator-x": "简报", "engineer-y": "产物", "reviewer-z": '{"verdict":"approve","findings":[]}' },
+    log,
+  );
+  const { d, stateDir } = await freshDaemon(driver);
+  for (const n of ["coordinator-x", "engineer-y", "reviewer-z", "alice", "bob"]) await d.create(n);
+  await d.createGroup("two-only", ["alice", "bob"]);
+  await assert.rejects(() => d.dispatch("two-only", "x"), /coordinator-.*engineer-.*reviewer-|must include/, "缺任一角色拒绝");
+  await assert.rejects(() => d.dispatch("ghost", "x"), /no such group/);
+  await assert.rejects(() => d.dispatch("two-only", "   "), /objective/);
+  await assert.rejects(() => d.dispatch("two-only", 42 as unknown as string), /objective/);
+  await d.createGroup("ok-team", ["coordinator-x", "engineer-y", "reviewer-z"]);
+  await d.dispatch("ok-team", "任务");
+  await waitSettled(d, "ok-team");
+  assert.equal(d.getGroup("ok-team")!.status, "done");
+  // 重入：终态后可再次 dispatch（新记录追加，id 递增）
+  const second = await d.dispatch("ok-team", "第二个任务");
+  assert.equal(second.dispatchId, "2");
+  await waitSettled(d, "ok-team");
+  assert.equal(d.getGroup("ok-team")!.dispatches.length, 2);
+  // 持久化：重载后 dispatch 记录仍在
+  const d2 = new BotDaemon({ stateDir, driver });
+  await d2.load();
+  assert.equal(d2.getDispatch("ok-team", "1")?.state, "done");
+  assert.equal(d2.getDispatch("ok-team", "2")?.state, "done");
+  assert.equal(d2.getDispatch("ok-team", "3"), undefined);
+  assert.equal(d2.getDispatch("ghost", "1"), undefined);
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("dispatch 阶段失败：bot run 失败 → dispatch failed、group failed、error 事件、后续阶段不执行；终态后可重新发起", async () => {
+  const log: Array<{ bot: string; brief: string }> = [];
+  const driver: Driver = {
+    name: "fail-mid",
+    async run(botName) {
+      log.push({ bot: botName, brief: "" });
+      if (botName === "engineer-y") return { ok: false, summary: "engineer boom" };
+      return { ok: true, summary: "m" };
+    },
+  };
+  const { d, stateDir } = await threeRoleGroup(driver);
+  await d.dispatch("dev-team", "任务");
+  await waitSettled(d, "dev-team");
+  assert.deepEqual(log.map((l) => l.bot), ["coordinator-x", "engineer-y"], "失败后不进入 reviewer 阶段");
+  const g = d.getGroup("dev-team")!;
+  const disp = g.dispatches[0];
+  assert.equal(disp.state, "failed");
+  assert.equal(disp.verdict, null, "未走到审查，verdict 为 null");
+  assert.match(disp.summary, /engineer/);
+  assert.equal(g.status, "failed");
+  assert.ok(g.events.some((e) => e.kind === "error" && /dispatch 1 failed/.test(e.detail)), "失败落 error 事件");
+  // failed 是终态而非 dispatching：可立即重新发起
+  const second = await d.dispatch("dev-team", "重试任务");
+  assert.deepEqual(second, { dispatchId: "2", state: "running" });
+  await waitSettled(d, "dev-team");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("verdict 解析：纯 JSON / 混入正文 / 畸形 JSON 裸键值可辨 / 不可判定返回 null", async () => {
+  const { parseVerdict } = await import("../src/daemon.ts");
+  assert.equal(parseVerdict('{"verdict":"approve","findings":[]}'), "approve");
+  assert.equal(parseVerdict('审查结论如下：\n{"verdict":"request-changes","findings":[{"severity":"high"}]}\n以上。'), "request-changes");
+  assert.equal(parseVerdict('{"verdict":"approve", 非法尾随'), "approve", "畸形 JSON 但键值形态可辨");
+  assert.equal(parseVerdict('{"verdict":"maybe"}'), null, "枚举外取值不可判定");
+  assert.equal(parseVerdict("完全无法判定的回复"), null);
+  assert.equal(parseVerdict(""), null);
+});
+
+test("HTTP 层：POST /groups/:g/dispatch 异步受理 + GET dispatches/:id 详情 + 404/400 形态", async () => {
+  const { d, stateDir } = await threeRoleGroup(
+    scriptedDispatchDriver(
+      { "coordinator-x": "任务简报", "engineer-y": "产物自述", "reviewer-z": '{"verdict":"approve","findings":[]}' },
+      [],
+    ),
+  );
+  const { serveHttp } = await import("../src/daemon.ts");
+  const port = 8880 + Math.floor(Math.random() * 100);
+  const server = await serveHttp(d, port);
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    const post = await fetch(base + "/groups/dev-team/dispatch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objective: "HTTP 冒烟任务" }),
+    });
+    assert.equal(post.status, 200);
+    assert.deepEqual(await post.json(), { dispatchId: "1", state: "running" });
+    let disp: Record<string, unknown> = {};
+    for (let i = 0; i < 400; i++) {
+      disp = (await (await fetch(base + "/groups/dev-team/dispatches/1")).json()) as Record<string, unknown>;
+      if (disp.state !== "running") break;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    assert.equal(disp.state, "done");
+    assert.equal(disp.rounds, 1);
+    assert.ok(String(disp.verdict).includes("approve"));
+    assert.ok(String(disp.summary).includes("approved"));
+    assert.equal((await fetch(base + "/groups/dev-team/dispatches/99")).status, 404);
+    assert.equal((await fetch(base + "/groups/ghost/dispatches/1")).status, 404);
+    assert.equal((await fetch(base + "/groups/ghost/dispatch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ objective: "x" }) })).status, 400);
+    const bad = await fetch(base + "/groups/dev-team/dispatch", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(bad.status, 400, "缺 objective 拒绝");
+    // group JSON 现在带 status/dispatches，供前端与轮询使用
+    const g = (await (await fetch(base + "/groups/dev-team")).json()) as { status: string; dispatches: unknown[] };
+    assert.equal(g.status, "done");
+    assert.equal(g.dispatches.length, 1);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});

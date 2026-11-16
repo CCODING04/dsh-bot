@@ -48,3 +48,11 @@
 1. **L1/L2 即时生效**，L3 逻辑正确（14 样本全对）但需新会话加载——三层冗余设计恰好兜住：CI 仍会拦住漏网提交。
 2. 假设成立：14+3 样本、1 次真实提交拦截、0 未修复误拦。规则从"文字"变为"退出码"。
 3. 分支保护（require PR）按计划 §5.8 留待 U3 启 PR 流时经用户确认开启。
+
+## 附录 · 决策更新（husky）
+
+用户于落地后解除"零依赖原则"（husky 可装）。评估：husky 对本仓库的唯一增量收益 = 克隆后自动启用 hooks，已用 `package.json` 的 `"prepare": "git config core.hooksPath .githooks || true"`（npm 生命周期，npm install 自动执行）等价覆盖，故维持零依赖；若未来需要 husky 的共享/多钩子管理再切换，迁移成本一行。
+
+## 附录 · CI 验证
+
+run 43817037151（commit 56d68d6）：`npm test` ✅ + `process-gate ci` ✅ → conclusion **success**。

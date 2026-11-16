@@ -1,0 +1,3 @@
+#!/bin/sh
+# 流程门禁（仓库本地 hook）：暂存区密钥扫描 / Dockerfile 吞错 / 档案交叉引用
+node scripts/process-gate.mjs pre-commit

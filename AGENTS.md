@@ -25,6 +25,10 @@
 
 **每个实验**（成功与失败 alike）必须记入 `docs/lab-notebook.md`：假设 → 方法（可复现命令）→ 数据（输出摘录，原始件存 `docs/experiments/EXP-NNN-*.md`）→ 结论。负结果与误诊过程照录——它们是 pstack 流程验证的核心 review 依据。诊断类实验必须分层多目标 + 双环境（容器/宿主机）对照后才许下结论（EXP-002 教训）。
 
+## 流程约束（自动执行，勿凭自觉）
+
+规则已固化为三层门禁，违反会被机器拦截而非靠记忆：**L1** `scripts/process-gate.mjs`（提交信息规范 / 密钥值形态扫描 / Dockerfile 吞错 / 档案交叉引用）经 `.githooks/`（`core.hooksPath` 已启用，仓库本地）在 commit-msg 与 pre-commit 强制；**L2** `.github/workflows/ci.yml` 在 push/PR 上重跑全部四项 + `npm test`；**L3** `.zcode/config.json` 的 PreToolUse(Bash) hook 调 `scripts/guard-bash.mjs` 拦危险 shell（无 `--rm` 的 docker run / `npm -g` / 全局 prune / 写本机 dsh 环境）。设计与验收数据见 `docs/process-enforcement-plan.md` 与 EXP-007。修改门禁规则 = 改上述脚本并同步过一遍坏样本验收，不是加一段新文字。
+
 ## pstack 技能位置
 
 `<pstack>` = `.zcode/skills/`（本仓库根）。poteto-mode 入口：`.zcode/skills/poteto-mode/SKILL.md`。

@@ -1,0 +1,3 @@
+#!/bin/sh
+# 流程门禁（仓库本地 hook，不碰全局）：仅检查本条提交信息
+node scripts/process-gate.mjs commit-msg "$1"

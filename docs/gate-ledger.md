@@ -25,3 +25,17 @@
 - GAP-001（2026-11-16）：`npm i -g` 在 L3 未加载期真跑 ×2 —— whyMissed=层未激活；remediation=ws 根配置+会话重启加载（EXP-007 附录）
 - GAP-002（2026-11-16）：`--patch/--json` 顺序 bug 穿过 13 项单测、被容器 E2E 抓住 —— whyMissed=规则缺失（单测无法检验 CLI 解析语义）；remediation=参数顺序防回归断言（EXP-008）
 - GAP-003（2026-11-16）：rebase 冲突标记随坏合并提交穿过门禁（CI 亦未拦，时序上先于规则存在）—— whyMissed=规则缺失；remediation=**新规则 conflict-marker（检查 6）**+ 手动 pre-commit 拦截实测 + CI 全量复查（暂存区类样本属电池范畴外，见 gate-selftest.mjs 头注；当日闭环，EXP-010）
+
+### GAP-004（2026-11-16）· git add -A 两次带入台账文件
+
+- **漏网路径**：`git add -A` 时 `.gate-ledger/` 的 gitignore 行在未合并分支上（各分支独立演进），新分支无保护 → 台账文件两次进入提交（均被发觉后重写/强移除，未推送到远端）
+- **shouldHaveBeenCaughtBy**：L1·secret-shape（部分——台账非密钥形态，仅一次含真实密钥形态时被拦）
+- **whyMissed**：范围错配——无「add-A 后 staged 含他分支 gitignored 路径」的专用规则
+- **remediation**：`.git/info/exclude` 本地兜底（全分支即时生效）+ PR #4 落库前置 gitignore 行 + GAP-004 条目（本条）
+
+### GAP-005（2026-11-16）· 提交信息声称的改动未在内容中
+
+- **漏网路径**：cli.ts 调试扫描豁免的编辑落在本地 main（3ba4223 未推送），而 amend 提交在 feat/pr-body-lint 上——#8 的提交信息与 PR 描述均声称「cli.ts 调试扫描豁免」，内容却没有该改动，穿过 PR 审查（reviewer 第三轮以 blob 对照抓出）
+- **shouldHaveBeenCaughtBy**：pr-body lint 无法机检「信息-内容一致性」（范畴边缘）；人审第三道防线生效
+- **whyMissed**：操作序列失误（amend 前未核对 `git branch --show-current`）+ 消息与内容不符
+- **remediation**：cherry-pick 3ba4223 上 PR #7 分支即时修复（gate 双绿验证豁免生效）；教训入本条：**amend 前必须核对当前分支**；EXP-012 记录完整时间线

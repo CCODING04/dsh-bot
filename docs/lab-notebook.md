@@ -11,6 +11,7 @@
 | EXP-003 | 2026-11-16 | GLM 路由首发验证（单发） | ✅ 通过 | `experiments/EXP-003-glm.md` |
 | EXP-004 | 2026-11-16 | U2 全链 E2E（HTTP→GLM→产物） | ✅ 通过 | `docs/phase-2-report.md` |
 | EXP-005 | 2026-11-16 | workflow 并行调研 U3 机制 | 🔄 运行中 | run `dwfrun-a4ebd73b…` |
+| EXP-006 | 2026-11-16 | 浏览器 GUI E2E（Web Chat 真实链路） | ✅ 通过 | 本文件 §EXP-006 |
 
 ---
 
@@ -60,3 +61,11 @@
 **方法**：CreateWorkflow（run `dwfrun-a4ebd73b-0f01-4691-9f93-32b3f388cf1e`）；3 个调研员（约束：证据优先/openQuestions 不许猜/不碰密钥/容器 --rm）+ 整合员写 `docs/u3-integration-spec.md`；主会话并行做实验存档（本文件）。
 **数据**：待运行完成回填（findings 数、verified/unconfirmed 比、contradictions、wall time vs 串行估算）。
 **结论**：待回填。
+
+## EXP-006 · 浏览器 GUI E2E（2026-11-16）
+
+**假设**：Web Chat 在真实浏览器操作（非 curl）下全链可用：建 bot → 发 brief → GLM 执行 → 事件流增量渲染 → 硬产物落盘。
+**方法**：browser-use 控制 ZCode 内置浏览器，认领用户已打开的 8787 标签页（不重复开新页）；fill+click 建 `gui-test` → fill+click 发真实 brief → waitFor 20s → domSnapshot 验证事件流 → `docker compose exec cat` 验产物。一次一个状态变更动作，每个 locator 先 `count()` 验唯一。
+**数据**：事件流渲染序 = 用户消息 → `状态：idle GUI 闭环完成`（bot 回复）→ `[step] dsh exited; answer head: GUI 闭环完成` → `[done]`；2s 轮询增量呈现新事件；产物 `/state/bots/gui-test/ws/gui-e2e.txt` = `browser-test-ok`。
+**结论**：GUI 全链通过。附带发现：用户在此之前已自行用 e2e bot 完成一次任务（页面留有完整事件史）——Web Chat 对真实用户可用。
+**方法沉淀**：GUI 测试协议 = 认领用户标签页（不新开）→ locator 唯一性验证 → 单动作单观察 → DOM 快照断言 + 容器产物断言双重判据。

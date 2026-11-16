@@ -19,10 +19,10 @@ node src/cli.ts logs demo
 
 ## 状态
 
-- [x] **U1** 骨架 + 沙箱 + stub 证据链（3/3 测试过）
-- [ ] **U2** dsh 真实驱动（需 `DEEPSEEK_API_KEY`；headless 一发式执行）
-- [ ] **U3** approval surfaced + 技能安装路径
-- [ ] **U4** 多 bot group 协作
+- [x] **U1** 骨架 + 沙箱 + stub 证据链（3/3 测试；`docs/phase-1-report.md`）
+- [x] **U2** 真实 dsh 驱动（GLM via bigmodel，容器 E2E 产物落盘；`docs/phase-2-report.md`）
+- [ ] **U3** 审批 × 会话 × 技能（进行中：U3-1 会话记忆与 `--json` 驱动 = PR #1；U3-2 permission surfaced + web；U3-3 技能管理）
+- [ ] **U4** 多 bot group 协作（三职责起步：coordinator / engineer / reviewer）
 
 ## 布局
 

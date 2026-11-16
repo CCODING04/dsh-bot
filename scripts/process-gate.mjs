@@ -207,12 +207,17 @@ function checkPrBody(rawBody, files, ctx = {}) {
     if (total > 800) problems.push(`diff 体量 ${total} 行 > 800：必须拆分（每个 PR 独立可理解、可回滚）`);
     else if (total > 400) console.error(`[process-gate] 警告：diff ${total} 行处于 400–800 区间（审查效率下降），考虑拆分`);
   }
-  // 调试输出（教程 §5 P0）：src/web 新增行含 console.log/debugger
-  if (ctx.diffText && files.some((x) => /^(src|web)\//.test(x))) {
-    const added = ctx.diffText.split(/\r?\n/).filter((l) => /^\+[^+]/.test(l));
+  // 调试输出（教程 §5 P0）：src/web 新增行含 console.log/debugger。
+  // 豁免 src/cli.ts——CLI 的 stdout 输出是产品行为而非调试残留。
+  if (ctx.diffText && files.some((x) => /^(src|web)\//.test(x) && x !== "src/cli.ts")) {
+    const scannedDiff = ctx.diffText
+      .split(/diff --git /)
+      .filter((sec) => /^a\/src\//.test(sec) && !sec.includes("b/src/cli.ts"))
+      .join("\ndiff --git ");
+    const added = scannedDiff.split(/\r?\n/).filter((l) => /^\+[^+]/.test(l));
     const hits = added.filter((l) => /console\.(log|debug)\(|\bdebugger\b/.test(l));
     if (hits.length) {
-      problems.push(`src/web 新增调试输出 ${hits.length} 处（console.log/debugger，P0 自检项）——首行示例：${hits[0].trim().slice(0, 80)}`);
+      problems.push(`src/web 新增调试输出 ${hits.length} 处（console.log/debugger，P0 自检项；src/cli.ts 的 stdout 输出豁免）——首行示例：${hits[0].trim().slice(0, 80)}`);
     }
   }
   if (problems.length) {

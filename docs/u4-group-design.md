@@ -44,3 +44,4 @@ coordinator 收 dispatch → 产出任务简报 → curl POST /bots/engineer-x/b
 - GLM 上下文长度对长任务的分解粒度约束（实测定）
 - parseVerdict 支持裁决同义词扩展：真 GLM 产出 "fail"/"PASS" 而非标准值——normalize 函数归类为标准 approve/request-changes（GAP-007 实测反馈）
 - normalize 集合字面量归一化 + reject/needs work/needs changes 等同义词补入——reviewer 第九轮 F1/F3 修复
+- driver verdict 摘要截断上限 2000→10000——真 GLM reviewer 裁决 JSON 需完整传递给 parseVerdict

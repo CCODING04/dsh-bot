@@ -242,7 +242,7 @@ export function dshDriver(opts: {
       events.push(...dshResultEvents(res, new Date().toISOString()));
       const ok = dshRunOk(res);
       const summary = ok
-        ? res.text.trim().slice(0, 2000) || "(empty)"
+        ? res.text.trim().slice(0, 10000) || "(empty)"
         : [
             res.runnerError ? `runner: ${res.runnerError}` : `exit ${res.exitCode} final=${res.finalReasonKind ?? "none"}`,
             res.text.trim().slice(0, 500),

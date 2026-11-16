@@ -1,7 +1,7 @@
 # U4 多 bot E2E 测试计划（Lauren Tan 方法 × 当下基建）
 
 > 配套 `u4-group-design.md`。方法翻译原则：Lauren 的每条实践 → 一层可机检判据。
-> 全程记 EXP-011（假设/数据/结论），bot 侧 permission_blocked 进遥测台账，E2E 脚本入库 `test/e2e/` 可重复。
+> 全程记 EXP-012（假设/数据/结论），bot 侧 permission_blocked 进遥测台账，E2E 脚本入库 `test/e2e/` 可重复。
 
 ## 0.5 操作面约束（硬规则）
 
@@ -11,7 +11,7 @@
 - **操作面（触发/交互）= Chat 界面**：dispatch 任务、切换 permissionMode、看 verdict——都从 chat 发起
 - **断言面（核验）= API/容器/文件**：事件流断言、产物核验、真跑测试仍走脚本（不经 UI）
 - 驱动方式分层：常规层（T-G0~T-G3）操作可用 **REST 等价调用**（chat 前端即同一 API，脚本复放同一端点）；**发布级验收（T-G5）与人工抽检必须真 GUI**——browser-use 按 EXP-006 协议驱动（认领标签页/locator 唯一性/单动作单观察/截图留档）
-- 每个 GUI 操作路径的截图与事件流对应关系记入 EXP-011（chat 操作全程可审计）
+- 每个 GUI 操作路径的截图与事件流对应关系记入 EXP-012（chat 操作全程可审计）
 
 ## 0. Lauren 方法 → 测试断言映射
 
@@ -55,7 +55,7 @@
 
 ### T-G5 完整微任务闭环（发布级验收）
 真实小任务：如「给一个玩具模块加 feature + 单测」。三 bot 全自动产出：PR-ready diff（bot 工作区内 `git diff`）+ verdict + 证据。
-**判据（Lauren 式硬验收）**：① diff 应用到干净副本后**真实运行测试通过**（E2E 脚本执行，非采信自述）；② verdict findings 每条可定位；③ 全程台账：token 消耗/时长/回环数记入 EXP-011。
+**判据（Lauren 式硬验收）**：① diff 应用到干净副本后**真实运行测试通过**（E2E 脚本执行，非采信自述）；② verdict findings 每条可定位；③ 全程台账：token 消耗/时长/回环数记入 EXP-012。
 
 ### T-G6 无人值守夜跑（对应流程矩阵 T7）
 CronCreate/OffPeak 排程 3 个独立任务的 autopilot-stack 队列（只出 patch 不合并）。
@@ -68,13 +68,13 @@ CronCreate/OffPeak 排程 3 个独立任务的 autopilot-stack 队列（只出 p
 - **E2E 驱动脚本** `test/e2e/group-e2e.mjs`：操作走 chat 同源 REST 端点（与前端完全一致）+ 事件流断言 + patch 应用后真跑测试（复用容器）
 - **chat group 面板**（U4 实施前置）：group 列表/选中/dispatch 输入/verdict 呈现——T-G5 GUI 验收的载体
 - **GUI 驱动**：browser-use + EXP-006 协议（T-G5 与人工抽检用）
-- **EXP-011**：假设=三职责回环能产出人类可信的 PR-ready patch；数据=各层判据结果 + 成本分布 + 回环分布 + GUI 操作路径截图；结论待跑
+- **EXP-012**：假设=三职责回环能产出人类可信的 PR-ready patch；数据=各层判据结果 + 成本分布 + 回环分布 + GUI 操作路径截图；结论待跑
 
 ## 3. 口径与熔断（explain-the-number）
 
 - 成功率按**任务**计，不按轮次；GLM 非确定性 → 每任务重试 ≤3 次熔断
 - verdict 质量人工抽检：每任务 ≥1 条 finding 人工核对
-- 全程 token/时长记账（bot 事件流聚合），EXP-011 报告原始数 + 任务粒度均值两栏
+- 全程 token/时长记账（bot 事件流聚合），EXP-012 报告原始数 + 任务粒度均值两栏
 - 时序依赖：T-G0/1 需 U3-2（permissionMode）+ U3-3（技能 CRUD）合入后方可执行
 
 ## 4. 执行顺序与阶段门

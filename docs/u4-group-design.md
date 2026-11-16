@@ -27,7 +27,7 @@ coordinator 收 dispatch → 产出任务简报 → curl POST /bots/engineer-x/b
 
 ## 3. 交付物（实施清单，待细化）
 
-1. daemon：groups CRUD + dispatch 路由 + group 事件流（EXP-011 存档位）
+1. daemon：groups CRUD + dispatch 路由 + group 事件流（EXP-012 存档位）
 2. 三个技能模板（SKILL.md，coordinator 含委派 curl 协议原文）
 3. `POST /bots/:n/brief` 增加 `waitFor: "completion"` 语义或 coordinator 轮询节奏约定（防死循环：回环上限 2）
 4. E2E：一个三 bot group 跑通"实现一个函数+审查"微任务（真 GLM），产物与 verdict 落档

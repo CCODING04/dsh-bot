@@ -153,13 +153,25 @@ function checkPrBody(rawBody, files, ctx = {}) {
     if (!body.includes(sec)) problems.push(`缺少必需章节「${sec}」`);
   }
   const touchesWeb = files.some((x) => /^web\//.test(x));
-  // 最终生效截图：所有 PR 必附（用户 2026-11-16 硬规则）；UI 改动另需 before/after 对照意识
-  if (!/!\[[^\]]*\]\([^)]+\)|<img[\s>]/.test(body)) {
+  // 最终生效截图：所有 PR 必附（用户 2026-11-16 硬规则）；UI 改动另需 before/after 对照意识。
+  // 截图必须用仓库 raw 绝对地址：PR 描述页不渲染相对路径图片（2026-11-16 GitHub 页面实测）。
+  const imageRefs = [...body.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)];
+  if (imageRefs.length === 0 && !/<img[\s>]/.test(body)) {
     problems.push(
       touchesWeb
-        ? "改动含 web/（UI）但未附最终生效截图（![...](docs/screenshots/....png)）——UI 须 before/after 对照"
-        : "未附最终生效截图认证：所有 PR 的 body 须含 ![...](docs/screenshots/....png) 形式的最后生效证据截图",
+        ? "改动含 web/（UI）但未附最终生效截图（![...](https://github.com/CCODING04/dsh-bot/raw/<commit>/docs/screenshots/....png)）——UI 须 before/after 对照"
+        : "未附最终生效截图认证：所有 PR 的 body 须含 ![...](https://github.com/CCODING04/dsh-bot/raw/<commit>/docs/screenshots/....png) 形式的最后生效证据截图",
     );
+  }
+  for (const m of imageRefs) {
+    const u = m[2];
+    if (u.startsWith("http")) {
+      if (!/^https:\/\/github\.com\/CCODING04\/dsh-bot\/raw\//.test(u)) {
+        problems.push(`截图必须使用仓库 raw 绝对地址（github.com/CCODING04/dsh-bot/raw/<commit>/路径），当前：${u}`);
+      }
+    } else {
+      problems.push(`截图使用了相对路径「${u}」——PR 描述页不渲染相对路径图片，须改为 https://github.com/CCODING04/dsh-bot/raw/<commit>/... 绝对地址`);
+    }
   }
   for (const m of body.matchAll(/`([^`\n]+)`/g)) {
     const p = m[1].trim();

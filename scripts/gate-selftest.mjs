@@ -62,7 +62,7 @@ const pr = (body, opts = {}) => {
   if (opts.diffFile) args.push("--diff-file", opts.diffFile);
   return spawnSync("node", args, { env, encoding: "utf8" }).status;
 };
-const FULL = "## Why\nw\n## What changed\nw\n## Scope\nw\n## Verification\n![e](docs/screenshots/.gitkeep)\n";
+const FULL = "## Why\nw\n## What changed\nw\n## Scope\nw\n## Verification\n![e](https://github.com/CCODING04/dsh-bot/raw/main/docs/screenshots/.gitkeep)\n";
 t("pr拦：缺章节", pr("## Why\nw\n") === 1);
 t("pr拦：web 改动无截图（全 PR 截图规则）", pr(FULL.replace(/!\[e\]\([^)]*\)/, ""), { files: "web/index.html" }) === 1);
 t("pr拦：反引号引用不存在文件", pr(FULL + "\n见 `src/not-exist-xyz.ts`\n") === 1);
@@ -73,7 +73,7 @@ t("pr拦：标题超 72", pr(FULL, { title: "feat: " + "好".repeat(80) }) === 1
 t("pr拦：标题模糊", pr(FULL, { title: "fix: fixes" }) === 1);
 t("pr拦：体量 >800", pr(FULL, { additions: 500, deletions: 350 }) === 1);
 t("pr放：体量 450 警告但过", pr(FULL, { additions: 400, deletions: 50 }) === 0);
-t("pr拦：仪式性 Verification（截图在别处，Verification 纯文字）", pr("## Why\n![e](docs/screenshots/.gitkeep)\n## What changed\nw\n## Scope\nw\n## Verification\nCI passes\n") === 1);
+t("pr拦：仪式性 Verification（截图在别处，Verification 纯文字）", pr("## Why\n![e](https://github.com/CCODING04/dsh-bot/raw/main/docs/screenshots/.gitkeep)\n## What changed\nw\n## Scope\nw\n## Verification\nCI passes\n") === 1);
 t("pr拦：src 新增调试输出", pr(FULL, { files: "src/a.ts", diffFile: writeDebugDiff(tmp) }) === 1);
 function writeDebugDiff(tmp) {
   const f = path.join(tmp, "d.diff");

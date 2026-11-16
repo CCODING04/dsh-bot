@@ -155,19 +155,22 @@ function checkPrBody(rawBody, files, ctx = {}) {
   const touchesWeb = files.some((x) => /^web\//.test(x));
   // 最终生效截图：所有 PR 必附（用户 2026-11-16 硬规则）；UI 改动另需 before/after 对照意识。
   // 截图必须用仓库 raw 绝对地址：PR 描述页不渲染相对路径图片（2026-11-16 GitHub 页面实测）。
-  const imageRefs = [...body.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)];
-  if (imageRefs.length === 0 && !/<img[\s>]/.test(body)) {
+  // 覆盖 markdown ![]() 与 <img src> 两种形态（reviewer 第五轮：img 标签不可成为逃逸通道）；
+  // markdown 图片支持 GitHub 的可选 "title" 语法。截图 URL 去重后统一校验，避免与链接规则双报。
+  const mdImages = [...body.matchAll(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g)];
+  const htmlImages = [...body.matchAll(/<img[^>]*\ssrc=["']([^"']+)["'][^>]*>/gi)];
+  const imageUrlSet = new Set([...mdImages.map((m) => m[2]), ...htmlImages.map((m) => m[1] ?? m[2] ?? "")]);
+  if (imageUrlSet.size === 0) {
     problems.push(
       touchesWeb
         ? "改动含 web/（UI）但未附最终生效截图（![...](https://github.com/CCODING04/dsh-bot/raw/<commit>/docs/screenshots/....png)）——UI 须 before/after 对照"
         : "未附最终生效截图认证：所有 PR 的 body 须含 ![...](https://github.com/CCODING04/dsh-bot/raw/<commit>/docs/screenshots/....png) 形式的最后生效证据截图",
     );
   }
-  for (const m of imageRefs) {
-    const u = m[2];
+  for (const u of imageUrlSet) {
     if (u.startsWith("http")) {
       if (!/^https:\/\/github\.com\/CCODING04\/dsh-bot\/raw\//.test(u)) {
-        problems.push(`截图必须使用仓库 raw 绝对地址（github.com/CCODING04/dsh-bot/raw/<commit>/路径），当前：${u}`);
+        problems.push(`截图必须使用仓库 raw 绝对地址（github.com/CCODING04/dsh-bot/raw/<commit>/路径；粘贴上传的 user-images 地址会被本规则拒绝，请改为仓库内文件），当前：${u}`);
       }
     } else {
       problems.push(`截图使用了相对路径「${u}」——PR 描述页不渲染相对路径图片，须改为 https://github.com/CCODING04/dsh-bot/raw/<commit>/... 绝对地址`);
@@ -178,8 +181,9 @@ function checkPrBody(rawBody, files, ctx = {}) {
     if (!/^(src|test|web|scripts|docs|docker|\.github|\.zcode|\.githooks)\//.test(p)) continue;
     if (!existsSync(p)) problems.push(`引用了 codebase 外或不存在的文件：\`${p}\``);
   }
-  for (const m of body.matchAll(/\]\(([^)\s]+)\)/g)) {
+  for (const m of body.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
     const href = m[1].trim();
+    if (imageUrlSet.has(href)) continue; // 截图 URL 已由截图规则校验，跳过链接规则（避免双重报错）
     if (/^https?:\/\//.test(href)) {
       if (!/^https?:\/\/github\.com\/CCODING04\/dsh-bot\//.test(href)) {
         problems.push(`PR 引用了 codebase 以外的链接（禁止）：${href}`);

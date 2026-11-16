@@ -13,7 +13,7 @@
 | EXP-007 | 2026-11-16 | 流程硬约束三层工程 | ✅ 通过（含 1 项时序发现） | `experiments/EXP-007-gates.md` |
 | EXP-008 | 2026-11-16 | U3-1 会话记忆 + --json 驱动（OQ-5 关闭） | ✅ 通过（含首跑顺序 bug 修复） | `experiments/EXP-008-session-memory.md` |
 | EXP-009 | 2026-11-16 | 角色方案调研（Lauren Tan 子代理设计） | ✅ 结论采纳（2 薄包装 + 技能即角色） | `experiments/EXP-009-role-design.md` |
-| EXP-010 | 2026-11-16 | 拦截台账基建（逃逸闭环当日闭环） | ✅ 18/18 回归样本集 + 首日 7 拦截/3 逃逸违规 | `experiments/EXP-010-gate-telemetry.md` |
+| EXP-010 | 2026-11-16 | 拦截审计日志基建（逃逸闭环当日闭环） | ✅ 18/18 回归样本集 + 首日 7 拦截/3 逃逸违规 | `experiments/EXP-010-gate-telemetry.md` |
 | EXP-011 | 2026-11-16 | permission_blocked 两形态实测（OQ-1 关闭） | ✅ 修正 FS_SANDBOX_DENIED 映射 | `experiments/EXP-011-permission-modes.md` |
 | EXP-012 | 2026-11-16 | 独立 reviewer 协作三轮（#1/#2、#3/#4/#5、#6/#7/#8）| ✅ 三轮：approve×5 + request-changes×3（全部修复后合入）| `experiments/EXP-012-reviewer-collab.md` |
 ---

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // gate-selftest.mjs —— 围栏样本电池（gate-telemetry-plan 清单 4）。
-// 全部样本在 GATE_SELFTEST=1 下运行 → 台账只落 selftest 类（口径规则 3：自测不计生产指标）。
-// 覆盖：guard-bash stdin 样本（不依赖 git 状态）+ process-gate commit-msg 样本 + 台账脱敏断言。
+// 全部样本在 GATE_SELFTEST=1 下运行 → 审计日志只落 selftest 类（口径规则 3：自测不计生产指标）。
+// 覆盖：guard-bash stdin 样本（不依赖 git 状态）+ process-gate commit-msg 样本 + 审计日志脱敏断言。
 // 已知局限（诚实标注）：依赖暂存区/git 历史的 pre-commit、ci 样本无法在此电池构造，
 // 由 L2 CI（每次 push 重跑真门禁）与 EXP-007/PR 验收手册覆盖。
 import { spawnSync } from "node:child_process";
@@ -87,22 +87,22 @@ function writeDebugDiff(tmp) {
   return f;
 }
 
-// ---- 台账脱敏断言（坑 1：拦截上下文不得含密钥原值） ----
+// ---- 审计日志脱敏断言（坑 1：拦截上下文不得含密钥原值） ----
 // 样本用拼接构造：源码里不出现完整密钥形态字面量，避免本脚本自身触发 secret-shape 拦截
 const bigmodelShape = "a".repeat(32) + ".SyntheticSuffix123";
 const skShape = "sk-" + "abcdefghijklmnopqrstuvwxyz123456";
 const { mask } = await import("./gate-ledger.mjs");
-t("台账脱敏：bigmodel 形态", mask(`x=${bigmodelShape}`) === "x=aaaaaa***");
-t("台账脱敏：sk- 形态", mask(`t=${skShape}`) === "t=sk-ab***");
+t("审计日志脱敏：bigmodel 形态", mask(`x=${bigmodelShape}`) === "x=aaaaaa***");
+t("审计日志脱敏：sk- 形态", mask(`t=${skShape}`) === "t=sk-ab***");
 
-// ---- selftest 类断言：本电池产生的台账事件全部 kind=selftest ----
+// ---- selftest 类断言：本回归样本集产生的审计日志事件全部 kind=selftest ----
 if (before === null) {
-  console.log("- 台账隔离断言 skipped（台账尚不存在，首跑无基线；二跑起生效）");
+  console.log("- 审计日志隔离断言 skipped（审计日志尚不存在，首跑无基线；二跑起生效）");
 } else {
   const lines = readFileSync(".gate-ledger/events.jsonl", "utf8").trim().split("\n");
   const recent = lines.slice(before);
   t(
-    `台账 selftest 隔离（${recent.length} 条新事件）`,
+    `审计日志 selftest 隔离（${recent.length} 条新事件）`,
     recent.length > 0 && recent.every((l) => JSON.parse(l).kind === "selftest"),
   );
 }

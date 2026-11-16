@@ -42,3 +42,4 @@ coordinator 收 dispatch → 产出任务简报 → curl POST /bots/engineer-x/b
 - coordinator 的 curl 能力=把 daemon API 暴露给模型——需审计面（哪些 endpoint 允许 bot 调：brief/status 可，create/delete bot 应拒——加 actor 区分，v0 用 UA 标记 bot 流量只放行白名单端点）
 - 轮询节奏：coordinator sleep 循环浪费 token——约定 engineer brief 完成即写约定文件，coordinator 一次长轮询
 - GLM 上下文长度对长任务的分解粒度约束（实测定）
+- parseVerdict 支持裁决同义词扩展：真 GLM 产出 "fail"/"PASS" 而非标准值——normalize 函数归类为标准 approve/request-changes（GAP-007 实测反馈）

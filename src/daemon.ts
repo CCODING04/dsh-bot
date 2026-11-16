@@ -28,9 +28,16 @@ function parsePermissionMode(v: unknown): PermissionMode {
  * 都取不出合法取值 → null（不可判定）。null 绝不当作 approve：静默 approve 正是 T-G3 要拦的失败模式。
  */
 export function parseVerdict(text: string): "approve" | "request-changes" | null {
+  const APPROVE = new Set(["approve", "pass", "lgtm", "approved", "通过"]);
+  const REJECT = new Set(["request-changes", "fail", "rejected", "changes_requested", "拒绝", "不通过"]);
+  const normalize = (v: unknown): "approve" | "request-changes" | undefined => {
+    const s = String(v ?? "").toLowerCase().replace(/[\s_-]/g, "");
+    if (APPROVE.has(s)) return "approve";
+    if (REJECT.has(s)) return "request-changes";
+    return undefined;
+  };
   const fromObj = (o: unknown): "approve" | "request-changes" | undefined => {
-    const v = (o as { verdict?: unknown } | null)?.verdict;
-    return v === "approve" || v === "request-changes" ? v : undefined;
+    return normalize((o as { verdict?: unknown } | null)?.verdict);
   };
   try {
     const v = fromObj(JSON.parse(text));

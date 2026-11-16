@@ -39,3 +39,10 @@
 - **shouldHaveBeenCaughtBy**：pr-body lint 无法机检「信息-内容一致性」（范畴边缘）；人审第三道防线生效
 - **whyMissed**：操作序列失误（amend 前未核对 `git branch --show-current`）+ 信息与内容不符
 - **remediation**：cherry-pick 3ba4223 上 PR #7 分支即时修复（gate 双绿验证豁免生效）；教训入本条：**amend 前必须核对当前分支**；EXP-012 记录完整时间线
+
+### GAP-006（2026-11-16）· 里程碑全部合入但 README 未勾选（5a 锚定缺口）
+
+- **逃逸路径**：U3 拆为三个 PR（#1/#6/#7）陆续合入，阶段报告按习惯推迟到阶段收尾——收尾被后续任务连续推迟；5a 规则锚定在 phase-N-report 文件存在性，报告未落盘时规则双向均无触发点，「单元全部合入 = 里程碑实质完成」这一事件无人监听
+- **shouldHaveBeenCaughtBy**：L1·readme-milestone（5a 的完成方向锚定缺口）+ 阶段收尾流程纪律
+- **whyMissed**：锚定缺口——规则只覆盖「报告与勾选不一致」，不覆盖「该写报告而未写」
+- **remediation**：phase-3-report.md 补齐 + README U3 勾选 + 规则升级：README 未勾选的 U-N 行若引用的 PR 已全部合并 → 拦截（gh 查 merge state，CI 与本地均可执行）；EXP-012 记录 reviewer 判据同源缺口

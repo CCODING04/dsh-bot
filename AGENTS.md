@@ -27,7 +27,22 @@
 
 ## 流程约束（自动执行，勿凭自觉）
 
-规则已固化为三层门禁，违反会被机器拦截而非靠记忆：**L1** `scripts/process-gate.mjs`（提交信息规范 / 密钥值形态扫描 / Dockerfile 吞错 / 档案交叉引用）经 `.githooks/`（`core.hooksPath` 已启用，仓库本地）在 commit-msg 与 pre-commit 强制；**L2** `.github/workflows/ci.yml` 在 push/PR 上重跑全部四项 + `npm test`；**L3** `.zcode/config.json` 的 PreToolUse(Bash) hook 调 `scripts/guard-bash.mjs` 拦危险 shell（无 `--rm` 的 docker run / `npm -g` / 全局 prune / 写本机 dsh 环境）。设计与验收数据见 `docs/process-enforcement-plan.md` 与 EXP-007。修改门禁规则 = 改上述脚本并同步过一遍坏样本验收，不是加一段新文字。
+规则已固化为三层门禁，违反会被机器拦截而非靠记忆：**L1** `scripts/process-gate.mjs`（提交信息规范 / 密钥值形态扫描 / Dockerfile 吞错 / 档案交叉引用 / README 里程碑同步 / 行为改动带文档）经 `.githooks/`（`core.hooksPath` 已启用，仓库本地）在 commit-msg 与 pre-commit 强制；**L2** `.github/workflows/ci.yml` 在 push/PR 上重跑全部检查 + `npm test`（且为分支保护 required check）；**L3** `.zcode/config.json` 的 PreToolUse(Bash) hook 调 `scripts/guard-bash.mjs` 拦危险 shell。设计与验收数据见 `docs/process-enforcement-plan.md` 与 EXP-007。修改门禁规则 = 改上述脚本并同步过一遍坏样本验收，不是加一段新文字。
+
+## 维护角色（职能约定，2026-11-16 定；U4 后做机器账号隔离）
+
+参照 Lauren Tan 的实践（两个循环 + 三职责起步，见 EXP-009 调研存档）：**角色是"读什么技能 + 什么权限"的函数，不是 N 份 persona 文件**。本仓库只有两个薄 agent 包装：`.zcode/agents/poteto-agent.md`（通用委派：先读 poteto-mode 全文）与 `.zcode/agents/comment-sicko.md`（只读审查特例）；知识活在 `.zcode/skills/`，按需路由。
+
+| 角色 | 职能 | 边界 |
+|---|---|---|
+| 人类（主厨） | 唯一 merge 执行者；密钥管理；不可逆动作批准 | main 分支保护 required `gate` 收敛一切合并到 PR |
+| 主会话 agent | 开分支 / 实现 / 验证 / 开 PR | **不 merge**（merge 是人类职能） |
+| 委派子代理（poteto-agent） | 带 brief 的实现/辅助任务 | 不 commit；密钥不下发；产物在分支 |
+| comment-sicko | 只读 diff 审查 | 不编辑文件 |
+| CI（gate） | 唯一绿灯裁判 | required check，绕不过（服务端） |
+| dsh-bot（U4 起） | 经 issue/PR 触发；三职责起步：coordinator（任务简报+owner+完成条件）/ engineer（PR+证据）/ reviewer（带复现裁决），**以不同技能集区分而非 persona 文件** | 产物只在自己分支；合并留人类 |
+
+**警告（Lauren 实践中的一手教训）**：角色不是凭据边界——同凭据下的 bots/agents 共享文件与会话。真正的隔离靠：容器/工作区物理边界、密钥分发边界（guard-bash + 围栏 §2）、分支权限。任何"角色隔离"的设计先过这条检查。
 
 ## pstack 技能位置
 

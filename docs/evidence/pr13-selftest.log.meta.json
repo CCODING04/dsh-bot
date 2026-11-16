@@ -1,0 +1,8 @@
+{
+  "kind": "evidence",
+  "command": "node scripts/gate-selftest.mjs",
+  "headSha": "516054a593a4f03ec82741ce0f474969219f3e69",
+  "at": "2026-11-16T14:39:42.745Z",
+  "exitCode": 1,
+  "outputSha256": "02adf5470e9208c312d7979636be41ead4ad628c70adb3ed5fb872303ada959f"
+}

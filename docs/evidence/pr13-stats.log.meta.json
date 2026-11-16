@@ -1,0 +1,8 @@
+{
+  "kind": "evidence",
+  "command": "node scripts/gate-stats.mjs",
+  "headSha": "516054a593a4f03ec82741ce0f474969219f3e69",
+  "at": "2026-11-16T14:39:45.590Z",
+  "exitCode": 0,
+  "outputSha256": "56d247bf4904fa6ddc9df72a17bcbae2ad1795fa636bca9ce11dd01211258a3d"
+}

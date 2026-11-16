@@ -46,6 +46,23 @@ test("重名 / 非法名 / 不存在的 bot → 明确报错", async () => {
   await rm(stateDir, { recursive: true, force: true });
 });
 
+test("dsh driver：不存在的 bin → spawn error 事件 + ok:false", async () => {
+  const { dshDriver } = await import("../src/drivers.ts");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const stateDir = await mkdtemp(path.join(tmpdir(), "dsh-bot-drv-"));
+  const events: import("../src/drivers.ts").BotEvent[] = [];
+  const r = await dshDriver({ dshBin: "definitely-not-a-bin-xyz", timeoutMs: 3000 }).run(
+    "t",
+    stateDir,
+    "hi",
+    events,
+  );
+  assert.equal(r.ok, false);
+  assert.ok(events.some((e) => e.kind === "error"));
+  await rm(stateDir, { recursive: true, force: true });
+});
+
 test("HTTP 层：Web Chat 页可达 + REST 建 bot 可查询", async () => {
   const { d, stateDir } = await freshDaemon();
   const { serveHttp } = await import("../src/daemon.ts");

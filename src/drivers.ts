@@ -38,17 +38,54 @@ export function stubDriver(): Driver {
   };
 }
 
-export function dshDriver(): Driver {
-  // U2 实装。占位实现先给出可探测的错误信息，避免静默误跑。
+export function dshDriver(opts: {
+  dshBin?: string;
+  patchPath?: string;
+  approvalPolicy?: "ask" | "never";
+  timeoutMs?: number;
+} = {}): Driver {
+  const dshBin = opts.dshBin ?? process.env.DSH_BIN ?? "dsh";
+  const patchPath = opts.patchPath ?? process.env.DSH_PATCH ?? "/app/docker/dsh-glm-patch.yml";
+  const approvalPolicy = opts.approvalPolicy ?? (process.env.DSH_APPROVAL_POLICY as "ask" | "never") ?? "never";
+  const timeoutMs = opts.timeoutMs ?? Number(process.env.DSH_TIMEOUT_MS ?? 10 * 60_000);
   return {
     name: "dsh",
-    async run(_botName, _workspace, _brief, events) {
+    async run(botName, workspace, brief, events) {
+      const { spawn } = await import("node:child_process");
       events.push({
         at: new Date().toISOString(),
-        kind: "error",
-        detail: "dsh driver not wired yet (U2). Set DSH_BOT_DRIVER=stub for smoke runs.",
+        kind: "brief_received",
+        detail: `${dshBin} headless · patch=${patchPath} · approval=${approvalPolicy} · cwd=${workspace}`,
       });
-      return { ok: false, summary: "dsh driver pending U2" };
+      const answer = await new Promise<string>((resolve) => {
+        const child = spawn(
+          dshBin,
+          ["--profile", "headless", "--patch", patchPath, "--approval-policy", approvalPolicy, "-"],
+          { cwd: workspace, stdio: ["pipe", "pipe", "pipe"] },
+        );
+        let out = "";
+        let err = "";
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          err += `\n[dsh-bot] timeout after ${timeoutMs}ms`;
+        }, timeoutMs);
+        child.stdout.on("data", (c: Buffer) => (out += c));
+        child.stderr.on("data", (c: Buffer) => (err += c));
+        child.on("error", (e) => {
+          clearTimeout(timer);
+          resolve(`spawn error: ${e.message}`);
+        });
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          resolve(code === 0 ? out : `exit ${code}\n${out}\n[dsh stderr] ${err.slice(-2000)}`);
+        });
+        child.stdin.write(brief);
+        child.stdin.end();
+      });
+      events.push({ at: new Date().toISOString(), kind: "step", detail: `dsh exited; answer head: ${answer.slice(0, 200)}` });
+      const ok = !answer.startsWith("spawn error:") && !answer.startsWith("exit ") && !answer.includes("[dsh-bot] timeout");
+      events.push({ at: new Date().toISOString(), kind: ok ? "done" : "error", detail: ok ? "dsh run complete" : answer.slice(0, 500) });
+      return { ok, summary: answer.trim().slice(0, 2000) || "(empty)" };
     },
   };
 }

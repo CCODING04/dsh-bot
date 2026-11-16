@@ -15,11 +15,13 @@ COPY src ./src
 COPY test ./test
 COPY docs ./docs
 COPY web ./web
+COPY docker ./docker
 
-# bot 状态与 dsh home 均在卷内，容器可弃
+# bot 状态与 dsh home 均在卷内，容器可弃；容器内默认走真实 dsh driver（GLM patch 随镜像）
 ENV DSH_HOME=/dsh-home \
     DSH_BOT_STATE=/state \
-    DSH_BOT_DRIVER=stub
+    DSH_BOT_DRIVER=dsh \
+    DSH_PATCH=/app/docker/dsh-glm-patch.yml
 VOLUME ["/dsh-home", "/state"]
 
 EXPOSE 8787

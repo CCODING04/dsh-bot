@@ -8,9 +8,11 @@ services:
     ports:
       - "127.0.0.1:8787:8787"
     environment:
-      # 密钥只经环境注入，不入库；缺省为空 → stub 冒烟模式
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DSH_BOT_DRIVER: ${DSH_BOT_DRIVER:-stub}
+      DSH_BOT_DRIVER: ${DSH_BOT_DRIVER:-dsh}
+      DSH_APPROVAL_POLICY: ${DSH_APPROVAL_POLICY:-never}
+    # 密钥只经 .env 注入（gitignored）：GLM_API_KEY/GLM_BASE_URL/GLM_MODEL
+    env_file:
+      - ../.env
     volumes:
       - dsh-home:/dsh-home
       - bot-state:/state

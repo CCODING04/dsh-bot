@@ -158,7 +158,7 @@ function checkPrBody(rawBody, files, ctx = {}) {
     problems.push(
       touchesWeb
         ? "改动含 web/（UI）但未附最终生效截图（![...](docs/screenshots/....png)）——UI 须 before/after 对照"
-        : "未附最终生效截图认证：所有 PR 须在 Verification 内以 ![...](docs/screenshots/....png) 附最后生效的证据截图",
+        : "未附最终生效截图认证：所有 PR 的 body 须含 ![...](docs/screenshots/....png) 形式的最后生效证据截图",
     );
   }
   for (const m of body.matchAll(/`([^`\n]+)`/g)) {

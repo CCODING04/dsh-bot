@@ -81,35 +81,41 @@ t("pr拦：img 标签相对路径逃逸", pr("## Why\n" + '<img src="docs/screen
 t("pr拦：img 标签外域地址", pr("## Why\n" + '<img src="https://example.com/a.png">' + "\n" + FULL + "\n") === 1);
 t("pr放：img 标签 raw 绝对地址", pr("## Why\n" + `<img src="${RAW}">` + "\n" + FULL + "\n") === 0);
 t("pr放：markdown title 语法（可选引号标题不误报）", pr('## Why\nw\n## What changed\nw\n## Scope\nw\n## Verification\n![e](' + RAW + ' "shot")\n') === 0);
-// ---- 证据溯源（GAP-007：手工构造图片必须被识破）——直接测 evidence-core 的纯校验函数 ----
+// ---- 证据溯源（GAP-007：手工构造内容必须被识破）——直接测 evidence-core 的纯校验函数 ----
 const ev = await import("../scripts/evidence-core.mjs");
 {
-  const pngFixture = path.join(tmp, "ev.png");
-  writeFileSync(pngFixture, "fake-png-bytes", "utf8");
-  const metaFixture = pngFixture + ".meta.json";
-  const outText = "$ node scripts/gate-selftest.mjs\nselftest：34 通过 / 0 失败";
-  const goodMeta = { kind: "evidence", command: "node scripts/gate-selftest.mjs", headSha: "0".repeat(12), at: "2026-11-16T00:00:00Z", exitCode: 0, outputSha256: ev.sha256(outText), pngSha256: ev.sha256("fake-png-bytes"), outputText: outText };
-  // 无元数据 → 拒绝（手工构造图片）
-  const missingMeta = path.join(tmp, "nometa.png");
+  const evLog = path.join(tmp, "test.log");
+  const evContent = "$ node scripts/gate-selftest.mjs\nselftest：34 通过 / 0 失败";
+  const evSha = ev.sha256(evContent);
+  const metaFixture = evLog + ".meta.json";
+  const goodMeta = { kind: "evidence", command: "node scripts/gate-selftest.mjs", headSha: "0".repeat(12), at: "2026-11-16T00:00:00Z", exitCode: 0, outputSha256: evSha, outputText: evContent };
+  // 无元数据 → 拒绝
+  const missingMeta = path.join(tmp, "nometa.log");
   writeFileSync(missingMeta, "fake", "utf8");
   const r1 = ev.verifyEvidence(missingMeta, { replay: false });
-  t("证据溯源：无 .meta.json 的手工图片拒绝", r1.ok === false && r1.reasons[0].includes("溯源元数据"));
+  t("证据溯源：无 .meta.json 的手工内容拒绝", r1.ok === false && r1.reasons[0].includes("溯源元数据"));
   // 完好元数据 → 通过
+  writeFileSync(evLog, evContent, "utf8");
   writeFileSync(metaFixture, JSON.stringify(goodMeta, null, 2), "utf8");
-  const r2 = ev.verifyEvidence(pngFixture, { replay: false });
+  const r2 = ev.verifyEvidence(evLog, { replay: false });
   t("证据溯源：完好元数据通过", r2.ok === true);
-  // 篡改 outputText（哈希不符）→ 拒绝
-  const tampered = { ...goodMeta, outputText: outText.replace("34", "99") };
-  writeFileSync(metaFixture, JSON.stringify(tampered, null, 2), "utf8");
-  const r3 = ev.verifyEvidence(pngFixture, { replay: false });
-  t("证据溯源：outputText 篡改被哈希识破", r3.ok === false && r3.reasons.some((x) => x.includes("不匹配")));
-  // 退出码非 0 的运行不得作为通过证据
-  const failed = { ...goodMeta, exitCode: 1 };
-  writeFileSync(metaFixture, JSON.stringify(failed, null, 2), "utf8");
-  const r4 = ev.verifyEvidence(pngFixture, { replay: false });
+  // 篡改文件内容（哈希不符）→ 拒绝
+  writeFileSync(evLog, evContent.replace("34", "99"), "utf8");
+  const r3 = ev.verifyEvidence(evLog, { replay: false });
+  t("证据溯源：文件内容篡改被哈希识破", r3.ok === false && r3.reasons.some((x) => x.includes("不匹配")));
+  // 退出码非 0 的运行不得作为通过证据（先恢复 log 原内容，确保只有 exitCode 差异）
+  writeFileSync(evLog, evContent, "utf8");
+  const failedMeta = { ...goodMeta, exitCode: 1 };
+  writeFileSync(metaFixture, JSON.stringify(failedMeta, null, 2), "utf8");
+  const r4 = ev.verifyEvidence(evLog, { replay: false });
   t("证据溯源：失败运行（exit 1）拒绝作为通过证据", r4.ok === false && r4.reasons.some((x) => x.includes("退出码")));
+  // 恢复完好状态
+  writeFileSync(evLog, evContent, "utf8");
+  writeFileSync(metaFixture, JSON.stringify(goodMeta, null, 2), "utf8");
+  const r5 = ev.verifyEvidence(evLog, { replay: false });
+  t("证据溯源：恢复后通过", r5.ok === true);
   rmSync(metaFixture, { force: true });
-  rmSync(pngFixture, { force: true });
+  rmSync(evLog, { force: true });
 }
 
 function writeDebugDiff(tmp) {

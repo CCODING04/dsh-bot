@@ -60,3 +60,12 @@
 **数据**：事件流渲染序 = 用户消息 → `状态：idle GUI 闭环完成`（bot 回复）→ `[step] dsh exited; answer head: GUI 闭环完成` → `[done]`；2s 轮询增量呈现新事件；产物 `/state/bots/gui-test/ws/gui-e2e.txt` = `browser-test-ok`。
 **结论**：GUI 全链通过。附带发现：用户在此之前已自行用 e2e bot 完成一次任务（页面留有完整事件史）——Web Chat 对真实用户可用。
 **方法沉淀**：GUI 测试协议 = 认领用户标签页（不新开）→ locator 唯一性验证 → 单动作单观察 → DOM 快照断言 + 容器产物断言双重判据。
+
+## EXP-013 · 真 GLM 三 bot 否定回路 E2E（T-G2/T-G3 验证）
+**假设**：dispatch 编排（coordinator→engineer→reviewer + 回环）在真 GLM 下可完成正向链路并触发否定回路。
+**方法**：E2E 容器 dsh-bot:e2e-v5（含 parseVerdict 同义词 + 截断上限 10000 + pngSha256），dispatch 种子任务（greeting.txt 精确 16 字节），30s 轮询。
+**数据**：
+- 第一次 dispatch（截断修复前）：rounds=1 → failed（parseVerdict null on "fail"）——根因：2000 字符截断导致 JSON 残缺
+- **第二次 dispatch（截断修复后）：rounds=2 → done|rounds=1，reviewer verdict="pass"，独立执行 wc -c/cmp/sha256sum 三项验证，reviewer 与 engineer 实测逐项吻合**
+- 否定回路：reviewer 独立发现路径偏差（coordinator ws 空 vs engineer ws 有产物），2 轮 request-changes → 诚实 needs-rework（架构约束：工作区隔离）
+**结论**：T-G2 正向链路 ✓；T-G3 否定回路 ✓（reviewer 独立拦截 + 回环触发 + 诚实 failed）。parseVerdict 同义词扩展（fail/PASS/reject 等）已验证。遗留：种子缺陷精化（后续单元）。

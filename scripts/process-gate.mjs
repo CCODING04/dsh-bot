@@ -76,6 +76,36 @@ function checkArchiveCrossRef() {
   }
 }
 
+/** 检查 5a（里程碑同步）：docs/phase-N-report.md 存在 ⇔ README 状态节 U<N> 已勾选。 */
+function checkReadmeSync() {
+  if (!existsSync("README.md") || !existsSync("docs")) return;
+  const readme = readFileSync("README.md", "utf8");
+  const phases = readdirSync("docs")
+    .map((f) => f.match(/^phase-(\d+)-report\.md$/))
+    .filter(Boolean)
+    .map((m) => Number(m[1]));
+  const boxes = new Map(
+    [...readme.matchAll(/- \[([ x])\] \*\*U(\d+)\*\*/g)].map((m) => [Number(m[2]), m[1] === "x"]),
+  );
+  for (const n of phases) {
+    if (!boxes.has(n)) fail(`phase-${n}-report.md 已落盘，但 README 状态节没有 U${n} 条目`);
+    if (boxes.get(n) !== true) fail(`phase-${n}-report.md 已落盘，但 README 的 U${n} 未勾选（文档漂移）`);
+  }
+  for (const [n, checked] of boxes) {
+    if (checked && !phases.includes(n)) fail(`README 勾选了 U${n}，但 docs/phase-${n}-report.md 不存在（勾选必须有报告支撑）`);
+  }
+}
+
+/** 检查 5b（行为改动带文档）：改动含 src/** 或 web/** 时必须同时改 README.md 或 docs/**。 */
+function checkDocsDrift(files) {
+  const behavior = files.filter((f) => /^(src|web)\//.test(f));
+  if (behavior.length === 0) return;
+  const hasDocs = files.some((f) => f === "README.md" || /^docs\//.test(f));
+  if (!hasDocs) {
+    fail(`本提交改动行为代码（${behavior.slice(0, 3).join("、")}…）但未更新 README.md 或 docs/ —— 文档必须与行为同步`);
+  }
+}
+
 const [mode, ...rest] = process.argv.slice(2);
 if (mode === "commit-msg") {
   const msgFile = rest[0];
@@ -90,6 +120,8 @@ if (mode === "pre-commit") {
   scanSecrets(staged);
   scanDockerfileSwallow(staged);
   checkArchiveCrossRef();
+  checkReadmeSync();
+  checkDocsDrift(staged);
   process.exit(0);
 }
 
@@ -100,10 +132,13 @@ if (mode === "ci") {
   if (subjects.length === 0) fail(`提交范围为空（base=${base}），CI 门禁无可检查对象`);
   for (const s of subjects) checkSubject(s);
   const tracked = git("ls-files").split(/\r?\n/).filter(Boolean);
+  const changed = git("diff", "--name-only", `${base}...HEAD`).split(/\r?\n/).filter(Boolean);
   scanSecrets(tracked);
   scanDockerfileSwallow(tracked);
   checkArchiveCrossRef();
-  console.log(`[process-gate] 通过：${subjects.length} 条提交信息 / ${tracked.length} 个文件密钥扫描 / Dockerfile / 档案交叉引用`);
+  checkReadmeSync();
+  checkDocsDrift(changed);
+  console.log(`[process-gate] 通过：${subjects.length} 条提交信息 / ${tracked.length} 个文件密钥扫描 / Dockerfile / 档案交叉引用 / README 里程碑同步 / 行为改动带文档`);
   process.exit(0);
 }
 

@@ -107,6 +107,33 @@ function checkReadmeSync() {
   for (const [n, checked] of boxes) {
     if (checked && !phases.includes(n)) fail(`README 勾选了 U${n}，但 docs/phase-${n}-report.md 不存在（勾选必须有报告支撑）`, { rule: "readme-milestone", severity: "low" });
   }
+  // 5c（GAP-006 锚定缺口修复）：未勾选 U-N 行引用的 PR 全部已合并 → 里程碑实质完成，
+  // 必须补 phase-N-report 与勾选——否则拦截（把债务钉在下一个合并上）。gh 不可用时跳过并注明。
+  for (const [n, checked] of boxes) {
+    if (checked) continue;
+    const row = readme.split(/\r?\n/).find((l) => l.includes(`**U${n}**`)) ?? "";
+    const prNums = [...row.matchAll(/#(\d+)/g)].map((m) => m[1]);
+    if (prNums.length === 0) continue;
+    let allMerged = true;
+    let probeNote = "";
+    try {
+      for (const num of prNums) {
+        const st = JSON.parse(
+          execFileSync("gh", ["pr", "view", num, "--json", "state"], { encoding: "utf8" }),
+        ).state;
+        if (st !== "MERGED") { allMerged = false; probeNote += `#${num}=${st} `; }
+      }
+    } catch {
+      console.error("[process-gate] 提示：gh 不可用，跳过 5c 里程碑完成检查（不影响本次结论）");
+      continue;
+    }
+    if (allMerged && !existsSync(`docs/phase-${n}-report.md`)) {
+      fail(`里程碑 U${n} 的 PR（${prNums.map((p) => "#" + p).join("、")}）已全部合并，但 README 未勾选且 docs/phase-${n}-report.md 不存在——请补阶段报告、勾选状态行后随本 PR 提交（GAP-006）`, { rule: "readme-milestone", severity: "medium" });
+    }
+    if (allMerged && existsSync(`docs/phase-${n}-report.md`) && boxes.get(n) !== true) {
+      // 报告在但勾选不在：5a 已拦，此处不重复
+    }
+  }
 }
 
 /** 检查 5b（行为改动带文档）：改动含 src/** 或 web/** 时必须同时改 README.md 或 docs/**。 */

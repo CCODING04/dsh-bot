@@ -49,3 +49,6 @@
 ## pstack 技能位置
 
 `<pstack>` = `.zcode/skills/`（本仓库根）。poteto-mode 入口：`.zcode/skills/poteto-mode/SKILL.md`。
+
+**PR 写法与自检纪律（`process-gate.mjs pr` 模式机检 + 人审双道）**：一个 PR 只做一件事（Primary/Supporting 分类，搭车改动拆走）；标题 Conventional Commits 且 ≤72 字符、禁模糊（update/misc/各种修复）；diff >800 行必须拆分；**所有 PR 必须在 Verification 附最终生效截图**（`docs/screenshots/` 入库；UI 改动须 before/after 对照）；文件引用只准 codebase 内真实路径，项目术语编号禁止裸引用（须附 docs/ 路径或中文括号展开）；Verification 禁止只写仪式性声明，必须给出命令/截图/链接证据；src/web 禁新增调试输出（pre-commit 与 pr 双层拦）。**PR 创建后必须打开 GitHub 对应页面自检渲染**：图片是否显示、链接是否可达、排版是否正确——发现问题立即修 body 重推。依据：《如何写好 PR》教程（GitHub/Google/SmartBear 实践）+ 本仓库模板。
+**PR 创建后自检**：打开 GitHub 页面核验渲染（图片显示/链接可达/排版正确），发现问题立即修 body 重推——机检（pr 模式）只管源码形态，渲染效果只有页面能证明。

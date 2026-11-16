@@ -287,6 +287,16 @@ if (mode === "pre-commit") {
   checkArchiveCrossRef();
   checkReadmeSync();
   checkDocsDrift(staged);
+  // 教程 §5 P0 前置：src/web 调试输出在提交时就拦（PR 层还有一道同款）
+  if (staged.some((x) => /^(src|web)\//.test(x))) {
+    const addedLines = git("diff", "--cached", "-U0", "--", "src", "web")
+      .split(/\r?\n/)
+      .filter((l) => /^\+[^+]/.test(l));
+    const hits = addedLines.filter((l) => /console\.(log|debug)\(|\bdebugger\b/.test(l));
+    if (hits.length) {
+      fail(`src/web 新增调试输出 ${hits.length} 处（console.log/debugger，P0）——首行：${hits[0].trim().slice(0, 80)}`, { rule: "debug-output", severity: "medium" });
+    }
+  }
   process.exit(0);
 }
 

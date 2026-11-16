@@ -27,6 +27,8 @@ coordinator 收 dispatch → 产出任务简报 → curl POST /bots/engineer-x/b
 
 ## 3. 交付物（实施清单，待细化）
 
+> 进度 2026-11-16（T-G0/T-G1 实现层）：交付物 1 的 groups CRUD（注册/查询/解散，随 groups.json 持久化）与交付物 2 的三技能模板已落地——`skillTemplates/` 三份 SKILL.md（coordinator-brief / engineer-discipline / reviewer-verdict），读取在 `src/role-templates.ts`，经既有 `PUT /bots/:n/skills` 安装；交付物 1 的 dispatch 路由与 group 事件流、交付物 3/4/5 归 T-G2 及后续。
+
 1. daemon：groups CRUD + dispatch 路由 + group 事件流（EXP-013 存档位）
 2. 三个技能模板（SKILL.md，coordinator 含委派 curl 协议原文）
 3. `POST /bots/:n/brief` 增加 `waitFor: "completion"` 语义或 coordinator 轮询节奏约定（防死循环：回环上限 2）

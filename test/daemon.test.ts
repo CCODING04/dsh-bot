@@ -528,3 +528,57 @@ test("HTTP 层：groups REST roundtrip（POST 201 → GET 列表/单个 → DELE
     await rm(stateDir, { recursive: true, force: true });
   }
 });
+
+// ---- U4：三职责角色技能模板（「技能即角色」，模板随 skillTemplates/ 分发）----
+
+test("角色模板契约：三模板齐全、frontmatter 合法、正文 200-400 字且含各自 JSON schema 关键字段", async () => {
+  const { listRoleTemplates } = await import("../src/role-templates.ts");
+  const ts = await listRoleTemplates();
+  assert.deepEqual(ts.map((t) => t.name), ["coordinator-brief", "engineer-discipline", "reviewer-verdict"]);
+  for (const t of ts) {
+    assert.ok(t.description.length > 0, `${t.name} description 必填`);
+    assert.ok(t.body.length >= 200 && t.body.length <= 400, `${t.name} 正文应 200-400 字（实际 ${t.body.length}）`);
+  }
+  // T-G1 schema：coordinator 简报四字段必须出现在正文
+  const coordinator = ts.find((t) => t.name === "coordinator-brief")!;
+  for (const field of ["objective", "owner", "done_condition", "artifacts_expected"]) {
+    assert.ok(coordinator.body.includes(field), `coordinator 正文缺简报字段 ${field}`);
+  }
+  // EXP-012 裁决格式：verdict/findings 及四 finding 字段必须出现在正文
+  const reviewer = ts.find((t) => t.name === "reviewer-verdict")!;
+  for (const token of ["verdict", "approve", "request-changes", "findings", "severity", "location", "issue", "evidence"]) {
+    assert.ok(reviewer.body.includes(token), `reviewer 正文缺裁决字段 ${token}`);
+  }
+  // poteto prove-it-works 浓缩：最小改动/先看后改/验证/不凭宣称报完成
+  const engineer = ts.find((t) => t.name === "engineer-discipline")!;
+  for (const token of ["最小改动", "先看后改", "验证命令", "不凭宣称报完成"]) {
+    assert.ok(engineer.body.includes(token), `engineer 正文缺纪律 ${token}`);
+  }
+});
+
+test("模板安装：listRoleTemplates 输出可直接 putSkill，listSkills 可见且落盘为 dsh 可发现形态", async () => {
+  const { listRoleTemplates, getRoleTemplate } = await import("../src/role-templates.ts");
+  const { d, stateDir } = await freshDaemon();
+  try {
+    await d.create("role-bot");
+    for (const t of await listRoleTemplates()) {
+      const meta = await d.putSkill("role-bot", t.name, t);
+      assert.deepEqual(meta, { name: t.name, description: t.description });
+    }
+    assert.deepEqual((await d.listSkills("role-bot")).map((s) => s.name), [
+      "coordinator-brief",
+      "engineer-discipline",
+      "reviewer-verdict",
+    ]);
+    const disk = await readFile(
+      path.join(stateDir, "bots", "role-bot", "ws", ".dsh", "skills", "reviewer-verdict", "SKILL.md"),
+      "utf8",
+    );
+    assert.match(disk, /^---\nname: reviewer-verdict\n/);
+    assert.ok(disk.includes("request-changes"));
+    assert.deepEqual(await getRoleTemplate("engineer-discipline"), (await listRoleTemplates()).find((t) => t.name === "engineer-discipline"));
+    assert.equal(await getRoleTemplate("no-such-role"), undefined);
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});

@@ -119,6 +119,24 @@ function checkDocsDrift(files) {
   }
 }
 
+/** 检查 6（冲突标记）：文件含未解决的 git 冲突标记即拦（escape #3 实时转化，2026-11-16）。 */
+function scanConflictMarkers(files) {
+  for (const f of files.filter((x) => /\.(md|mjs|ts|json|yml|yaml|html|sh)$/.test(x))) {
+    let text;
+    try {
+      text = readFileSync(f, "utf8");
+    } catch {
+      continue;
+    }
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, i) => {
+      if (/^(<{7}|>{7}) /.test(line)) {
+        fail(`${f}:${i + 1} 含未解决的 git 冲突标记「${line.slice(0, 12)}…」——先解决冲突再提交`, { rule: "conflict-marker", severity: "medium" });
+      }
+    });
+  }
+}
+
 const [mode, ...rest] = process.argv.slice(2);
 if (mode === "commit-msg") {
   const msgFile = rest[0];
@@ -132,6 +150,7 @@ if (mode === "pre-commit") {
   const staged = git("diff", "--cached", "--name-only", "--diff-filter", "ACMR").split(/\r?\n/).filter(Boolean);
   scanSecrets(staged);
   scanDockerfileSwallow(staged);
+  scanConflictMarkers(staged);
   checkArchiveCrossRef();
   checkReadmeSync();
   checkDocsDrift(staged);
@@ -148,10 +167,11 @@ if (mode === "ci") {
   const changed = git("diff", "--name-only", "--diff-filter", "ACMR", `${base}...HEAD`).split(/\r?\n/).filter(Boolean);
   scanSecrets(tracked);
   scanDockerfileSwallow(tracked);
+  scanConflictMarkers(tracked);
   checkArchiveCrossRef();
   checkReadmeSync();
   checkDocsDrift(changed);
-  console.log(`[process-gate] 通过：${subjects.length} 条提交信息 / ${tracked.length} 个文件密钥扫描 / Dockerfile / 档案交叉引用 / README 里程碑同步 / 行为改动带文档`);
+  console.log(`[process-gate] 通过：${subjects.length} 条提交信息 / ${tracked.length} 个文件密钥扫描 / Dockerfile / 冲突标记 / 档案交叉引用 / README 里程碑同步 / 行为改动带文档`);
   process.exit(0);
 }
 

@@ -1,7 +1,6 @@
 // gate-ledger.mjs —— 拦截台账共享模块（docs/gate-telemetry-plan.md §2/§7）。
 // 台账永不入库（.gitignore）；context 强制脱敏（坑 1）；单行 appendFile（坑 2/6：Windows 不依赖 shell >>）。
-import { appendFile, appendFileSync, mkdirSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
 const LEDGER_DIR = path.join(import.meta.dirname, "..", ".gate-ledger");
@@ -25,9 +24,8 @@ export function mask(text) {
  * GATE_SELFTEST=1 环境下任何 kind 强制降为 selftest（口径规则 3：自测不计生产指标）。
  */
 export async function record(event) {
-  const line = buildLine(event);
-  await mkdir(LEDGER_DIR, { recursive: true });
-  await appendFile(LEDGER_FILE, line, "utf8"); // 单次 append 完整行（<4KB 实际原子，坑 2）
+  // 异步接口保留（兼容 await 调用方）；实现走同步追加，语义与坑 2/6 一致
+  recordSync(event);
 }
 
 /** 同步版：拦截路径用（process.exit 前必须落盘） */

@@ -32,3 +32,6 @@ fi
 
 sec "测试"
 npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)" | sed 's/^/  /'
+
+sec "围栏效能（gate-stats 摘要）"
+node scripts/gate-stats.mjs 2>/dev/null | grep -E "拦截总数|escape 数|L2 CI" | sed 's/^/  /' || echo "  stats 不可用"

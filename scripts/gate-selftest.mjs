@@ -88,7 +88,7 @@ const ev = await import("../scripts/evidence-core.mjs");
   writeFileSync(pngFixture, "fake-png-bytes", "utf8");
   const metaFixture = pngFixture + ".meta.json";
   const outText = "$ node scripts/gate-selftest.mjs\nselftest：34 通过 / 0 失败";
-  const goodMeta = { kind: "evidence", command: "node scripts/gate-selftest.mjs", headSha: "0".repeat(12), at: "2026-11-16T00:00:00Z", exitCode: 0, outputSha256: ev.sha256(outText), outputText: outText };
+  const goodMeta = { kind: "evidence", command: "node scripts/gate-selftest.mjs", headSha: "0".repeat(12), at: "2026-11-16T00:00:00Z", exitCode: 0, outputSha256: ev.sha256(outText), pngSha256: ev.sha256("fake-png-bytes"), outputText: outText };
   // 无元数据 → 拒绝（手工构造图片）
   const missingMeta = path.join(tmp, "nometa.png");
   writeFileSync(missingMeta, "fake", "utf8");

@@ -137,10 +137,11 @@ function checkReadmeSync() {
   }
 }
 
-/** 检查 8（证据溯源，GAP-007）：docs/screenshots/ 新增的 PNG 必须携带溯源元数据并通过完整性校验。
- *  手工构造（无 .meta.json）或哈希不符的图片一律拒绝——杜绝手工伪造"执行截图"。 */
+/** 检查 8（证据溯源，GAP-007）：仓库内任意路径新增的图片文件必须携带溯源元数据并通过完整性校验
+ *  （全仓库范围 + 大小写不敏感扩展名——收口 reviewer 第七轮 F3 指出的子目录/根目录/大写扩展逃逸）。
+ *  手工构造（无 .meta.json）、哈希不符、或 PNG 字节与溯源哈希不符（换芯）一律拒绝。 */
 function checkEvidenceProvenance(files, { replay }) {
-  const pngs = files.filter((f) => /^docs\/screenshots\/[^/]+\.png$/.test(f));
+  const pngs = files.filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f));
   for (const png of pngs) {
     const r = verifyEvidence(png, { replay, cwd: process.cwd() });
     if (!r.ok) {

@@ -46,3 +46,9 @@
 - **shouldHaveBeenCaughtBy**：L1·readme-milestone（5a 的完成方向锚定缺口）+ 阶段收尾流程纪律
 - **whyMissed**：锚定缺口——规则只覆盖「报告与勾选不一致」，不覆盖「该写报告而未写」
 - **remediation**：phase-3-report.md 补齐 + README U3 勾选 + 规则升级：README 未勾选的 U-N 行若引用的 PR 已全部合并 → 拦截（gh 查 merge state，CI 与本地均可执行）；EXP-012 记录 reviewer 判据同源缺口
+
+### GAP-007 补记（2026-11-16）· 重放校验延后的决策与理由
+
+- **决策**：证据溯源的 L2 重放校验（CI 内重新执行命令并比对输出哈希）暂缓——回归样本集与审计日志口径的输出含非确定片段（计数随审计日志状态变化、时间戳），重放必然不一致，会产生系统性误报
+- **当前防线**：L1 完整性校验（outputText 哈希 + PNG 字节绑定 pngSha256 换芯检测）+ 捕获工具唯一化（agent 无法参与文本撰写）已覆盖「手工构造」与「事后换芯」两类伪造；重放针对的剩余形态是「陈旧证据冒充新运行」——由 meta 的 HEAD/时间戳字段供人工核验
+- **收口条件**：gate-selftest/gate-stats 输出改造为确定性结构化格式（如 --json 固定 schema）后启用重放，届时 SAFE_REPLAY 白名单按命令粒度启用

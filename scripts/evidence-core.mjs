@@ -41,10 +41,12 @@ export function capture(outPng, command, cwd) {
     headSha,
     at: new Date().toISOString(),
     exitCode: r.exitCode,
-    outputSha256: outputSha,
-    outputText: r.outputText,
+  outputSha256: outputSha,
+  outputText: r.outputText,
   };
   renderCard(outPng, meta);
+  // PNG 字节绑定（换芯检测：GAP-007a）——渲染后重读最终字节写入溯源
+  meta.pngSha256 = sha256(readFileSync(outPng));
   writeFileSync(outPng + ".meta.json", JSON.stringify(meta, null, 2), "utf8");
   return meta;
 }
@@ -58,9 +60,21 @@ export function verifyEvidence(pngPath, { replay = true, cwd } = {}) {
     reasons.push("缺少溯源元数据 " + path.basename(metaPath) + "（证据必须由 scripts/capture-evidence.mjs 生成，手工构造的图片不予接受）");
     return { ok: false, reasons };
   }
-  const meta = JSON.parse(readFileSync(metaPath, "utf8"));
-  if (meta.kind !== "evidence") reasons.push("meta.kind 非证据类型");
+  const meta = (() => {
+    try {
+      return JSON.parse(readFileSync(metaPath, "utf8"));
+    } catch {
+      return { kind: "malformed" }; // 畸形 meta → 统一走「缺溯源元数据」拒绝路径（fail-closed，带清晰原因）
+    }
+  })();
+  if (meta.kind !== "evidence") reasons.push("meta.kind 非证据类型或 JSON 畸形");
   if (sha256(meta.outputText ?? "") !== meta.outputSha256) reasons.push("outputSha256 与 outputText 不匹配（元数据被篡改）");
+  if (meta.pngSha256) {
+    const pngSha = sha256(readFileSync(pngPath));
+    if (pngSha !== meta.pngSha256) reasons.push("PNG 字节与溯源哈希不符（换芯检测：图片被替换）");
+  } else {
+    reasons.push("元数据缺 pngSha256（旧格式或手工构造）");
+  }
   if (meta.exitCode !== 0) reasons.push(`记录的命令退出码非 0（${meta.exitCode}）——失败运行不得作为通过证据`);
   if (replay && isReplayable(meta.command)) {
     const args = meta.command.split(/\s+/);

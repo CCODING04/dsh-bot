@@ -1,9 +1,10 @@
 {
   "kind": "evidence",
   "command": "node scripts/gate-selftest.mjs",
-  "headSha": "7db19729da0224087ade4c38338f287da440c85f",
-  "at": "2026-11-16T13:53:59.936Z",
+  "headSha": "507fec4f1b7dfa3f85bdb505bc068528f6d281e6",
+  "at": "2026-11-16T14:25:16.518Z",
   "exitCode": 0,
-  "outputSha256": "246a433a3f486c23ad65e40d3aa275200731dbc985bf56436acf3dc2741bd9be",
-  "outputText": "✔ 拦：docker run 无 --rm/-d/--name\n✔ 放：docker run --rm\n✔ 放：docker run -d --name\n✔ 放：docker compose\n✔ 拦：npm i -g\n✔ 放：npm install 本地\n✔ 拦：docker system prune\n✔ 拦：写 D:/Dev/DSH\n✔ 放：读 DSH + stderr 丢弃\n✔ 拦：mv ~/.dsh\n✔ 放：普通命令\n✔ 拦：非 conventional\n✔ 放：feat:\n✔ 放：Merge 前缀\n✔ 拦：空主题\n✔ pr拦：缺章节\n✔ pr拦：web 改动无截图（全 PR 截图规则）\n✔ pr拦：反引号引用不存在文件\n✔ pr拦：codebase 外链接\n✔ pr拦：术语裸引用（同行无展开）\n✔ pr放：术语带 docs/ 展开\n✔ pr拦：标题超 72\n✔ pr拦：标题模糊\n✔ pr拦：体量 >800\n✔ pr放：体量 450 警告但过\n✔ pr拦：仪式性 Verification（截图在别处，Verification 纯文字）\n✔ pr拦：src 新增调试输出\n✔ pr拦：img 标签相对路径逃逸\n✔ pr拦：img 标签外域地址\n✔ pr放：img 标签 raw 绝对地址\n✔ pr放：markdown title 语法（可选引号标题不误报）\n✔ 审计日志脱敏：bigmodel 形态\n✔ 审计日志脱敏：sk- 形态\n✔ 审计日志 selftest 隔离（19 条新事件）\n\nselftest：34 通过 / 0 失败\n"
+  "outputSha256": "761bc1c283e43d163fb8f1d074948db64b46e046d2f04bfe6e0892544c262687",
+  "outputText": "✔ 拦：docker run 无 --rm/-d/--name\n✔ 放：docker run --rm\n✔ 放：docker run -d --name\n✔ 放：docker compose\n✔ 拦：npm i -g\n✔ 放：npm install 本地\n✔ 拦：docker system prune\n✔ 拦：写 D:/Dev/DSH\n✔ 放：读 DSH + stderr 丢弃\n✔ 拦：mv ~/.dsh\n✔ 放：普通命令\n✔ 拦：非 conventional\n✔ 放：feat:\n✔ 放：Merge 前缀\n✔ 拦：空主题\n✔ pr拦：缺章节\n✔ pr拦：web 改动无截图（全 PR 截图规则）\n✔ pr拦：反引号引用不存在文件\n✔ pr拦：codebase 外链接\n✔ pr拦：术语裸引用（同行无展开）\n✔ pr放：术语带 docs/ 展开\n✔ pr拦：标题超 72\n✔ pr拦：标题模糊\n✔ pr拦：体量 >800\n✔ pr放：体量 450 警告但过\n✔ pr拦：仪式性 Verification（截图在别处，Verification 纯文字）\n✔ pr拦：src 新增调试输出\n✔ pr拦：img 标签相对路径逃逸\n✔ pr拦：img 标签外域地址\n✔ pr放：img 标签 raw 绝对地址\n✔ pr放：markdown title 语法（可选引号标题不误报）\n✔ 证据溯源：无 .meta.json 的手工图片拒绝\n✔ 证据溯源：完好元数据通过\n✔ 证据溯源：outputText 篡改被哈希识破\n✔ 证据溯源：失败运行（exit 1）拒绝作为通过证据\n✔ 审计日志脱敏：bigmodel 形态\n✔ 审计日志脱敏：sk- 形态\n✔ 审计日志 selftest 隔离（19 条新事件）\n\nselftest：38 通过 / 0 失败\n",
+  "pngSha256": "fdc33ac693c8f2fbcc856d27762f67d12c84479b825de46a0fcd078ac1ff43f0"
 }

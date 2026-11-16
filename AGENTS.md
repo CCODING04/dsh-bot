@@ -21,6 +21,10 @@
 4. 合并前 unslop 自查；审查阶段按 no-comments / interrogate 映射执行（见适配表）。
 5. 每阶段（U1–U4）在 `docs/phase-N-report.md` 记录：做了什么 / 运行证据 / 清理清单。
 
+## 实验存档制度（review 硬要求）
+
+**每个实验**（成功与失败 alike）必须记入 `docs/lab-notebook.md`：假设 → 方法（可复现命令）→ 数据（输出摘录，原始件存 `docs/experiments/EXP-NNN-*.md`）→ 结论。负结果与误诊过程照录——它们是 pstack 流程验证的核心 review 依据。诊断类实验必须分层多目标 + 双环境（容器/宿主机）对照后才许下结论（EXP-002 教训）。
+
 ## pstack 技能位置
 
 `<pstack>` = `.zcode/skills/`（本仓库根）。poteto-mode 入口：`.zcode/skills/poteto-mode/SKILL.md`。

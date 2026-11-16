@@ -1,0 +1,28 @@
+services:
+  bot-host:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: dsh-bot:dev
+    container_name: dsh-bot-host
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      # 密钥只经环境注入，不入库；缺省为空 → stub 冒烟模式
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DSH_BOT_DRIVER: ${DSH_BOT_DRIVER:-stub}
+    volumes:
+      - dsh-home:/dsh-home
+      - bot-state:/state
+    # 出网理由（见 docker/README.md）：运行期仅需 LLM API 出网；
+    # stub 模式可完全断网。严格白名单属 L3 加固项。
+    networks:
+      - default
+
+volumes:
+  dsh-home:
+  bot-state:
+
+networks:
+  default:
+    name: dsh-bot-net

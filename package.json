@@ -1,0 +1,13 @@
+{
+  "name": "dsh-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bot runtime on DeepSeek Harness (dsh), aligned to xAI Grok Bot capabilities. Developed as a pstack-workflow validation vehicle.",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test test/daemon.test.ts",
+    "start": "node src/cli.ts serve"
+  },
+  "license": "MIT"
+}

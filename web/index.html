@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- dsh-bot 临时测试 chat：零依赖单文件，同源调用 daemon REST -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dsh-bot · 测试 Chat</title>
+<style>
+:root{--bg:#F0FDF4;--card:#fff;--ink:#111827;--mut:#6B7280;--pri:#059669;--line:#E5E7EB;--ac:#A7F3D0}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.7 "Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;height:100vh}
+header{display:flex;gap:12px;align-items:center;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+header b{color:var(--pri)}
+header .sp{flex:1}
+button{border:1px solid var(--pri);background:var(--pri);color:#fff;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px}
+button.ghost{background:#fff;color:var(--pri)}
+select,input{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:13px;background:#fff}
+main{flex:1;display:flex;min-height:0}
+aside{width:200px;background:var(--card);border-right:1px solid var(--line);padding:10px;overflow:auto}
+aside h4{margin:4px 0 8px;color:var(--mut);font-size:12px}
+.bot-item{padding:6px 8px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.bot-item:hover{background:var(--bg)}
+.bot-item.on{background:var(--ac)}
+.dot{width:8px;height:8px;border-radius:50%;background:#9CA3AF}
+.dot.idle{background:var(--pri)}.dot.running{background:#F59E0B}.dot.failed{background:#EF4444}.dot.awaiting_approval{background:#3B82F6}
+#chat{flex:1;display:flex;flex-direction:column;min-width:0}
+#feed{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:72%;padding:9px 13px;border-radius:10px;white-space:pre-wrap;word-break:break-word}
+.msg.me{align-self:flex-end;background:var(--pri);color:#fff}
+.msg.bot{align-self:flex-start;background:var(--card);border:1px solid var(--line)}
+.msg.evt{align-self:flex-start;font-size:12px;color:var(--mut);background:transparent;border:1px dashed var(--ac);border-radius:8px}
+footer{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-top:1px solid var(--line)}
+#text{flex:1}
+</style>
+</head>
+<body>
+<header>
+  <b>dsh-bot</b><span style="color:var(--mut)">测试 Chat（Web 临时界面）</span><span class="sp"></span>
+  <input id="newbot" placeholder="新 bot 名，如 alice" style="width:150px">
+  <button onclick="createBot()">＋ 建 bot</button>
+  <button class="ghost" onclick="loadBots()">刷新</button>
+</header>
+<main>
+  <aside><h4>BOTS</h4><div id="botlist"></div></aside>
+  <div id="chat">
+    <div id="feed"></div>
+    <footer>
+      <input id="text" placeholder="给选中的 bot 发 brief…" onkeydown="if(event.key==='Enter')send()">
+      <button onclick="send()">发送</button>
+    </footer>
+  </div>
+</main>
+<script>
+let bots=[],cur=null,knownEvt=0,timer=null;
+const $=id=>document.getElementById(id);
+const feed=$("feed");
+function add(cls,text){const d=document.createElement("div");d.className="msg "+cls;d.textContent=text;feed.appendChild(d);feed.scrollTop=feed.scrollHeight}
+async function api(p,opt){const r=await fetch(p,opt);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||r.status);return r.json()}
+async function loadBots(){try{bots=await api("/bots");}catch(e){bots=[]}
+  $("botlist").innerHTML="";
+  for(const b of bots){const d=document.createElement("div");d.className="bot-item"+(cur===b.name?" on":"");
+    d.innerHTML=`<span>${b.name}</span><span class="dot ${b.status}" title="${b.status}"></span>`;
+    d.onclick=()=>{cur=b.name;knownEvt=0;feed.innerHTML="";add("evt",`已连接 bot「${b.name}」 · 工作区 ${b.workspace}`);loadBots()};
+    $("botlist").appendChild(d)}}
+async function createBot(){const n=$("newbot").value.trim();if(!n)return alert("填个名字");try{await api("/bots",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:n})});cur=n;knownEvt=0;feed.innerHTML="";add("evt",`bot「${n}」已创建`);$("newbot").value="";loadBots()}catch(e){alert(e.message)}}
+async function send(){const t=$("text").value.trim();if(!t||!cur)return alert(cur?"输入内容":"先选/建一个 bot");$("text").value="";add("me",t);
+  try{const b=await api(`/bots/${cur}/brief`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text:t})});add("bot",`状态：${b.status}\n${b.lastResult??"(无结果)"}`)}catch(e){add("evt","出错："+e.message)}}
+async function poll(){if(!cur)return;try{const b=await api("/bots/"+cur);for(const e of b.events.slice(knownEvt)){if(e.kind!=="created")add("evt",`[${e.kind}] ${e.detail}`)}knownEvt=b.events.length;const s=document.querySelector(".bot-item.on .dot");if(s)s.className="dot "+b.status}catch{}}
+loadBots();timer=setInterval(poll,2000);
+</script>
+</body>
+</html>

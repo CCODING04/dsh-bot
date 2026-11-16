@@ -161,24 +161,25 @@ test("解析器：runner 级失败 —— 只有单个 error 事件、无 final�
 
 // ---- U3：permission_blocked 映射（CB4）与 spawn 参数契约（CB1/CB2）----
 
-test("permission_blocked 映射：SANDBOX_ESCALATION/AUTO_REVIEW 码映射，其他错误码不映射", async () => {
+test("permission_blocked 映射：FS_SANDBOX_DENIED/SANDBOX_ESCALATION/AUTO_REVIEW 码映射，其他错误码不映射", async () => {
   const { parseDshJsonStream, dshResultEvents, PERMISSION_BLOCKED_CODES } = await import("../src/drivers.ts");
-  const mkToolResult = (code: string) =>
-    JSON.stringify({ type: "tool_result", callId: "c1", status: "error", result: "[sandbox: file access denied]", error: { name: "SandboxEscalationError", code, reason: "escalation unavailable" } });
+  const mkToolResult = (code: string, name = "SandboxEscalationError") =>
+    JSON.stringify({ type: "tool_result", callId: "c1", status: "error", result: "[sandbox: file access denied]", error: { name, code, reason: "escalation unavailable" } });
   const r = parseDshJsonStream(
     [
       JSON.stringify({ type: "session", sessionId: "s1", cwd: "/ws" }),
       mkToolResult("SANDBOX_ESCALATION_UNAVAILABLE"),
+      mkToolResult("FS_SANDBOX_DENIED", "FsError"),
       mkToolResult("AUTO_REVIEW_DENIED"),
       mkToolResult("SOME_OTHER_TOOL_ERROR"),
       JSON.stringify({ type: "final", sessionId: "s1", reason: { kind: "error" }, text: "" }),
     ],
     1,
   );
-  assert.deepEqual(r.toolResults.map((t) => t.code), ["SANDBOX_ESCALATION_UNAVAILABLE", "AUTO_REVIEW_DENIED", "SOME_OTHER_TOOL_ERROR"]);
+  assert.deepEqual(r.toolResults.map((t) => t.code), ["SANDBOX_ESCALATION_UNAVAILABLE", "FS_SANDBOX_DENIED", "AUTO_REVIEW_DENIED", "SOME_OTHER_TOOL_ERROR"]);
   const events = dshResultEvents(r, "2026-11-16T00:00:00Z");
   const blocked = events.filter((e) => e.kind === "permission_blocked");
-  assert.equal(blocked.length, 2);
+  assert.equal(blocked.length, 3);
   for (const e of blocked) {
     const code = e.detail.split(" ")[0];
     assert.ok(PERMISSION_BLOCKED_CODES.has(code));
@@ -240,17 +241,21 @@ test("会话绑定：成功写绑定、失败清绑定（CB3 裁决：失败不�
   await rm(stateDir, { recursive: true, force: true });
 });
 
-test("旧版 bots.json（无 sessionId 字段）加载后为 null，HTTP 形状向后兼容", async () => {
+test("旧版 bots.json（无 sessionId / permissionMode 字段）加载后回填，HTTP 形状向后兼容", async () => {
   const { d, stateDir } = await freshDaemon();
   await d.create("legacy");
   const file = path.join(stateDir, "bots.json");
   const raw = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>[];
-  for (const b of raw) delete b.sessionId;
+  for (const b of raw) {
+    delete b.sessionId;
+    delete b.permissionMode;
+  }
   const { writeFile } = await import("node:fs/promises");
   await writeFile(file, JSON.stringify(raw), "utf8");
   const d2 = new BotDaemon({ stateDir, driverName: "stub" });
   await d2.load();
   assert.equal(d2.get("legacy")?.sessionId, null);
+  assert.equal(d2.get("legacy")?.permissionMode, "workspace-write");
   await rm(stateDir, { recursive: true, force: true });
 });
 
@@ -291,4 +296,67 @@ test("per-bot 串行队列：同 bot 排队（前一完成才开下一个），�
   await Promise.all([p1, p2, p3]);
   assert.equal(maxOverlap, 2, "同 bot 从未并行（若并行则与 b1 叠成 3）");
   await rm(stateDir, { recursive: true, force: true });
+});
+
+// ---- U3-2：per-bot permissionMode（CB2 每调用显式权限姿态）----
+
+test("permissionMode：默认 workspace-write、创建可指定、runBrief 按次透传给 driver（CB2）", async () => {
+  const seen: Array<RunOptions | undefined> = [];
+  const driver: Driver = {
+    name: "scripted",
+    async run(_bot, _ws, _brief, _events, opts?: RunOptions) {
+      seen.push(opts);
+      return { ok: true, summary: "x" };
+    },
+  };
+  const { d, stateDir } = await freshDaemon(driver);
+  assert.equal((await d.create("mode-default")).permissionMode, "workspace-write");
+  assert.equal((await d.create("mode-locked", "read-only")).permissionMode, "read-only");
+  await d.brief("mode-default", "t");
+  await d.brief("mode-locked", "t");
+  assert.deepEqual(seen.map((o) => o?.permissionMode), ["workspace-write", "read-only"]);
+  await d.update("mode-locked", { permissionMode: "danger-full-access" });
+  await d.brief("mode-locked", "t");
+  assert.equal(seen[2]?.permissionMode, "danger-full-access", "改动后下一次 brief 生效");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("update：permissionMode 非法值（含 auto）与未知字段拒绝，合法值随 bots.json 持久化", async () => {
+  const { d, stateDir } = await freshDaemon();
+  await d.create("patchy");
+  await assert.rejects(() => d.update("patchy", { permissionMode: "auto" }), /invalid permissionMode/); // C6：auto 不可选
+  await assert.rejects(() => d.update("patchy", { permissionMode: "super" }), /invalid permissionMode/);
+  await assert.rejects(() => d.update("patchy", { name: "new-name" } as Record<string, unknown>), /permissionMode only/);
+  await assert.rejects(() => d.update("ghost", { permissionMode: "read-only" }), /no such bot/);
+  assert.equal((await d.update("patchy", { permissionMode: "read-only" })).permissionMode, "read-only");
+  const d2 = new BotDaemon({ stateDir, driverName: "stub" });
+  await d2.load();
+  assert.equal(d2.get("patchy")?.permissionMode, "read-only");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("HTTP 层：POST /bots 可带 permissionMode，PATCH /bots/:n 改 mode（非法值 400）", async () => {
+  const { d, stateDir } = await freshDaemon();
+  const { serveHttp } = await import("../src/daemon.ts");
+  const port = 8790 + Math.floor(Math.random() * 100);
+  const server = await serveHttp(d, port);
+  const base = `http://127.0.0.1:${port}`;
+  const post = (body: unknown) =>
+    fetch(base + "/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const patch = (name: string, body: unknown) =>
+    fetch(`${base}/bots/${name}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    const created = await post({ name: "locked", permissionMode: "read-only" });
+    assert.equal(created.status, 201);
+    assert.equal((await created.json()).permissionMode, "read-only");
+    assert.equal((await post({ name: "nope", permissionMode: "auto" })).status, 400);
+    assert.equal((await patch("locked", { permissionMode: "danger-full-access" })).status, 200);
+    const got = await (await fetch(base + "/bots/locked")).json();
+    assert.equal(got.permissionMode, "danger-full-access");
+    assert.equal((await patch("locked", { permissionMode: "yolo" })).status, 400);
+    assert.equal((await patch("locked", { status: "idle" })).status, 400);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    await rm(stateDir, { recursive: true, force: true });
+  }
 });

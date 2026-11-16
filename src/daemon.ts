@@ -5,16 +5,24 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createServer, type IncomingMessage } from "node:http";
-import { makeDriver, dshRunOk, type BotEvent, type Driver } from "./drivers.ts";
+import { makeDriver, dshRunOk, PERMISSION_MODES, type BotEvent, type Driver, type PermissionMode } from "./drivers.ts";
 
 const webIndex = path.join(import.meta.dirname, "..", "web", "index.html");
 
+/** 边界校验（HTTP body → 域类型）：三值枚举外的输入一律拒绝，不静默回退（C6 容器契约）。 */
+function parsePermissionMode(v: unknown): PermissionMode {
+  if (typeof v === "string" && (PERMISSION_MODES as readonly string[]).includes(v)) return v as PermissionMode;
+  throw new Error(`invalid permissionMode: ${JSON.stringify(v)} (expected ${PERMISSION_MODES.join(" | ")})`);
+}
+
 export type Bot = {
   name: string;
-  createdAt: string;
-  status: "idle" | "running" | "awaiting_approval" | "failed";
+  // awaiting_approval 已删（U3-2）：headless 无实时审批通道，该态永不可达；
+  // 权限阻止走 permission_blocked 事后事件，不改 status（C8/CB4）
+  status: "idle" | "running" | "failed";
   workspace: string;
   sessionId: string | null; // 绑定最后一次成功轮次的 dsh 会话（resume 用，随 bots.json 持久化）；失败不动（CB3）
+  permissionMode: PermissionMode; // per-bot 权限姿态，默认 workspace-write；resume 不恢复授权，故每次调用显式传（CB2）
   events: BotEvent[];
   lastBrief: string | null;
   lastResult: string | null;
@@ -42,6 +50,7 @@ export class BotDaemon {
       const raw = JSON.parse(await readFile(this.botsFile, "utf8")) as Bot[];
       for (const b of raw) {
         if (b.sessionId === undefined) b.sessionId = null; // U3 前的 bots.json 无此字段
+        if (b.permissionMode === undefined) b.permissionMode = "workspace-write"; // U3-2 前的 bots.json 无此字段
         this.bots.set(b.name, b);
       }
     } catch {
@@ -62,7 +71,7 @@ export class BotDaemon {
     return this.bots.get(name);
   }
 
-  async create(name: string): Promise<Bot> {
+  async create(name: string, permissionMode?: PermissionMode): Promise<Bot> {
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(name)) {
       throw new Error(`invalid bot name: ${name}`);
     }
@@ -75,11 +84,23 @@ export class BotDaemon {
       status: "idle",
       workspace,
       sessionId: null,
-      events: [{ at: new Date().toISOString(), kind: "created", detail: `workspace at ${workspace}` }],
+      permissionMode: permissionMode ?? "workspace-write",
+      events: [{ at: new Date().toISOString(), kind: "created", detail: `workspace at ${workspace} · permissionMode=${permissionMode ?? "workspace-write"}` }],
       lastBrief: null,
       lastResult: null,
     };
     this.bots.set(name, bot);
+    await this.persist();
+    return bot;
+  }
+
+  /** v0 唯一可改字段：permissionMode（PATCH /bots/:name）。改动即时持久化，下一次 brief 生效。 */
+  async update(name: string, body: Record<string, unknown>): Promise<Bot> {
+    const bot = this.bots.get(name);
+    if (!bot) throw new Error(`no such bot: ${name}`);
+    const extra = Object.keys(body).filter((k) => k !== "permissionMode");
+    if (extra.length > 0) throw new Error(`patchable field is permissionMode only (got: ${extra.join(", ")})`);
+    if (body.permissionMode !== undefined) bot.permissionMode = parsePermissionMode(body.permissionMode);
     await this.persist();
     return bot;
   }
@@ -103,7 +124,10 @@ export class BotDaemon {
     bot.status = "running";
     bot.lastBrief = brief;
     try {
-      const r = await driver.run(bot.name, bot.workspace, brief, bot.events, { sessionId: bot.sessionId });
+      const r = await driver.run(bot.name, bot.workspace, brief, bot.events, {
+        sessionId: bot.sessionId,
+        permissionMode: bot.permissionMode,
+      });
       bot.status = r.ok ? "idle" : "failed";
       bot.lastResult = r.summary;
       // CB3（主会话裁决）：失败清绑定——失败轮次不延续上下文，下次 brief 开新会话；
@@ -123,7 +147,7 @@ export class BotDaemon {
   }
 }
 
-/** 极简 JSON HTTP 服务：POST /bots, POST /bots/:n/brief, GET /bots, GET /bots/:n；返回 server 以便测试关闭 */
+/** 极简 JSON HTTP 服务：POST /bots, GET /bots, GET/PATCH /bots/:n, POST /bots/:n/brief；返回 server 以便测试关闭 */
 export function serveHttp(daemon: BotDaemon, port: number): Promise<import("node:http").Server> {
   return new Promise((resolve) => {
     const server = createServer(async (req, res) => {
@@ -141,12 +165,17 @@ export function serveHttp(daemon: BotDaemon, port: number): Promise<import("node
         }
         if (req.method === "GET" && parts.length === 1 && parts[0] === "bots") return json(200, daemon.list());
         if (req.method === "POST" && parts.length === 1 && parts[0] === "bots") {
-          const body = JSON.parse(await readBody(req)) as { name: string };
-          return json(201, await daemon.create(body.name));
+          const body = JSON.parse(await readBody(req)) as { name: string; permissionMode?: unknown };
+          const permissionMode = body.permissionMode === undefined ? undefined : parsePermissionMode(body.permissionMode);
+          return json(201, await daemon.create(body.name, permissionMode));
         }
         if (req.method === "GET" && parts.length === 2 && parts[0] === "bots") {
           const bot = daemon.get(parts[1]);
           return bot ? json(200, bot) : json(404, { error: `no such bot: ${parts[1]}` });
+        }
+        if (req.method === "PATCH" && parts.length === 2 && parts[0] === "bots") {
+          const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
+          return json(200, await daemon.update(parts[1], body));
         }
         if (req.method === "POST" && parts.length === 3 && parts[0] === "bots" && parts[2] === "brief") {
           const body = JSON.parse(await readBody(req)) as { text: string };

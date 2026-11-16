@@ -14,6 +14,9 @@ const execFileP = promisify(execFile);
 
 const webIndex = path.join(import.meta.dirname, "..", "web", "index.html");
 
+/** bot 与 group 同一命名规则（u4：组名同 bot 规则）。 */
+const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
 /** 边界校验（HTTP body → 域类型）：三值枚举外的输入一律拒绝，不静默回退（C6 容器契约）。 */
 function parsePermissionMode(v: unknown): PermissionMode {
   if (typeof v === "string" && (PERMISSION_MODES as readonly string[]).includes(v)) return v as PermissionMode;
@@ -39,14 +42,25 @@ export type DaemonOptions = {
   driver?: Driver;           // 直接注入 driver 实例（测试/装配用）；缺省按 driverName/env 构造
 };
 
+/** 命名 bot 集合（U4/T-G0）：daemon 只做注册与查询，不做任何调度决策（u4-group-design §1）。 */
+export type Group = {
+  name: string;
+  members: string[]; // bot 名，去重后 ≥2；解散组不删 bot
+  createdAt: string;
+  events: BotEvent[]; // 复用 bot 事件 kind；dispatch/brief/verdict 事件流归 T-G2
+};
+
 export class BotDaemon {
   private bots = new Map<string, Bot>();
+  private groups = new Map<string, Group>();
   private readonly botsFile: string;
+  private readonly groupsFile: string;
   private readonly opts: DaemonOptions;
 
   constructor(opts: DaemonOptions) {
     this.opts = opts;
     this.botsFile = path.join(opts.stateDir, "bots.json");
+    this.groupsFile = path.join(opts.stateDir, "groups.json");
   }
 
   async load() {
@@ -61,11 +75,22 @@ export class BotDaemon {
     } catch {
       /* 首次启动无文件 */
     }
+    try {
+      const raw = JSON.parse(await readFile(this.groupsFile, "utf8")) as Group[];
+      for (const g of raw) this.groups.set(g.name, g);
+    } catch {
+      /* 首次启动无文件 */
+    }
   }
 
   private async persist() {
     await mkdir(this.opts.stateDir, { recursive: true });
     await writeFile(this.botsFile, JSON.stringify([...this.bots.values()], null, 2), "utf8");
+  }
+
+  private async persistGroups() {
+    await mkdir(this.opts.stateDir, { recursive: true });
+    await writeFile(this.groupsFile, JSON.stringify([...this.groups.values()], null, 2), "utf8");
   }
 
   list(): Bot[] {
@@ -77,7 +102,7 @@ export class BotDaemon {
   }
 
   async create(name: string, permissionMode?: PermissionMode): Promise<Bot> {
-    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(name)) {
+    if (!NAME_RE.test(name)) {
       throw new Error(`invalid bot name: ${name}`);
     }
     if (this.bots.has(name)) throw new Error(`bot already exists: ${name}`);
@@ -118,6 +143,49 @@ export class BotDaemon {
     if (body.permissionMode !== undefined) bot.permissionMode = parsePermissionMode(body.permissionMode);
     await this.persist();
     return bot;
+  }
+
+  // ---- bot group（U4/T-G0）：命名 bot 集合的注册与查询。dispatch 编排属 T-G2（coordinator bot
+  // 决策），daemon 不做智能调度——接口在此预留，本单元不实现（u4-group-design §1/§3）。
+
+  listGroups(): Group[] {
+    return [...this.groups.values()];
+  }
+
+  getGroup(name: string): Group | undefined {
+    return this.groups.get(name);
+  }
+
+  /** 建组：组名同 bot 命名规则；成员须为已存在 bot，去重后 ≥2。 */
+  async createGroup(name: unknown, members: unknown): Promise<Group> {
+    if (typeof name !== "string" || !NAME_RE.test(name)) {
+      throw new Error(`invalid group name: ${JSON.stringify(name ?? null)}`);
+    }
+    if (this.groups.has(name)) throw new Error(`group already exists: ${name}`);
+    if (!Array.isArray(members)) throw new Error("members must be an array of bot names");
+    const distinct = [...new Set(members)];
+    for (const m of distinct) {
+      if (typeof m !== "string") throw new Error(`member must be a bot name string, got: ${JSON.stringify(m)}`);
+      if (!this.bots.has(m)) throw new Error(`no such bot: ${m}`);
+    }
+    if (distinct.length < 2) {
+      throw new Error(`group needs >= 2 distinct existing bots (got ${distinct.length})`);
+    }
+    const group: Group = {
+      name,
+      members: distinct,
+      createdAt: new Date().toISOString(),
+      events: [{ at: new Date().toISOString(), kind: "created", detail: `members: ${distinct.join(", ")}` }],
+    };
+    this.groups.set(name, group);
+    await this.persistGroups();
+    return group;
+  }
+
+  /** 解散组（组名保留给未来重建；bot 原样不动）。 */
+  async deleteGroup(name: string): Promise<void> {
+    if (!this.groups.delete(name)) throw new Error(`no such group: ${name}`);
+    await this.persistGroups();
   }
 
   /** 同 bot 的任务串行排队（前一进程 close 后再下一个），不同 bot 并行（CB8 单写者纪律）。 */
@@ -223,7 +291,7 @@ export class BotDaemon {
   }
 }
 
-/** 极简 JSON HTTP 服务：POST /bots, GET /bots, GET/PATCH /bots/:n, POST /bots/:n/brief；返回 server 以便测试关闭 */
+/** 极简 JSON HTTP 服务：POST/GET /bots, GET/PATCH /bots/:n, POST /bots/:n/brief, bots skills CRUD，POST/GET /groups, GET/DELETE /groups/:n；返回 server 以便测试关闭 */
 export function serveHttp(daemon: BotDaemon, port: number): Promise<import("node:http").Server> {
   return new Promise((resolve) => {
     const server = createServer(async (req, res) => {
@@ -269,6 +337,22 @@ export function serveHttp(daemon: BotDaemon, port: number): Promise<import("node
         if (req.method === "DELETE" && parts.length === 4 && parts[0] === "bots" && parts[2] === "skills") {
           if (!daemon.get(parts[1])) return json(404, { error: `no such bot: ${parts[1]}` });
           await daemon.deleteSkill(parts[1], parts[3]);
+          return json(200, { ok: true });
+        }
+        if (req.method === "GET" && parts.length === 1 && parts[0] === "groups") return json(200, daemon.listGroups());
+        if (req.method === "POST" && parts.length === 1 && parts[0] === "groups") {
+          const body = JSON.parse(await readBody(req)) as { name?: unknown; members?: unknown };
+          return json(201, await daemon.createGroup(body.name, body.members));
+        }
+        if (req.method === "GET" && parts.length === 2 && parts[0] === "groups") {
+          const g = daemon.getGroup(parts[1]);
+          return g ? json(200, g) : json(404, { error: `no such group: ${parts[1]}` });
+        }
+        // T-G2 预留位：POST /groups/:g/dispatch {task} 按职责路由（coordinator 编排）。
+        // 本单元（T-G0/T-G1 实现层）只做注册/查询/解散，daemon 不做智能决策（u4-group-design §1）。
+        if (req.method === "DELETE" && parts.length === 2 && parts[0] === "groups") {
+          if (!daemon.getGroup(parts[1])) return json(404, { error: `no such group: ${parts[1]}` });
+          await daemon.deleteGroup(parts[1]);
           return json(200, { ok: true });
         }
         json(404, { error: "not found" });

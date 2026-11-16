@@ -451,3 +451,134 @@ test("HTTP 层：POST /bots 可带 permissionMode，PATCH /bots/:n 改 mode（�
     await rm(stateDir, { recursive: true, force: true });
   }
 });
+
+// ---- U4：bot group（T-G0 组建层，daemon 只做注册/查询，不做调度决策）----
+
+test("group CRUD roundtrip：建组 → 查询 → groups.json 持久化 → 解散（bot 不受影响）", async () => {
+  const { d, stateDir } = await freshDaemon();
+  await d.create("coordinator-x");
+  await d.create("engineer-y");
+  const g = await d.createGroup("team-1", ["coordinator-x", "engineer-y"]);
+  assert.equal(g.name, "team-1");
+  assert.deepEqual(g.members, ["coordinator-x", "engineer-y"]);
+  assert.ok(g.createdAt, "应有 createdAt");
+  assert.ok(g.events.some((e) => e.kind === "created"), "建组落 created 事件（复用 BotEvent kind）");
+  assert.deepEqual(d.getGroup("team-1"), g);
+  assert.deepEqual(d.listGroups().map((x) => x.name), ["team-1"]);
+  // groups.json 与 bots.json 同目录，重载可恢复
+  const raw = JSON.parse(await readFile(path.join(stateDir, "groups.json"), "utf8")) as unknown[];
+  assert.equal(raw.length, 1);
+  const d2 = new BotDaemon({ stateDir, driverName: "stub" });
+  await d2.load();
+  assert.deepEqual(d2.getGroup("team-1")?.members, ["coordinator-x", "engineer-y"]);
+  // 解散：组消失，bot 原样保留
+  await d2.deleteGroup("team-1");
+  assert.equal(d2.getGroup("team-1"), undefined);
+  assert.ok(d2.get("coordinator-x"), "解散组不得删 bot");
+  assert.equal(d2.listGroups().length, 0);
+  await assert.rejects(() => d2.deleteGroup("team-1"), /no such group: team-1/, "重复解散明确报错");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("group 校验：不存在 bot 拒绝 / 重复成员去重 / 去重后不足 2 拒绝 / 非法名与重名拒绝", async () => {
+  const { d, stateDir } = await freshDaemon();
+  await d.create("alice");
+  await d.create("bob");
+  await assert.rejects(() => d.createGroup("g1", ["alice", "ghost"]), /no such bot: ghost/);
+  await assert.rejects(() => d.createGroup("g1", ["alice"]), />= 2 distinct/, "去重后不足 2 个拒绝");
+  await assert.rejects(() => d.createGroup("g1", ["alice", 42] as unknown as string[]), /bot name string/);
+  await assert.rejects(() => d.createGroup("g1", "alice,bob"), /array/, "非数组 members 拒绝");
+  const dedup = await d.createGroup("dedup", ["alice", "alice", "bob"]);
+  assert.deepEqual(dedup.members, ["alice", "bob"], "重复成员去重后 ≥2 即通过");
+  await assert.rejects(() => d.createGroup("Bad Name!", ["alice", "bob"]), /invalid group name/);
+  await assert.rejects(() => d.createGroup("dedup", ["alice", "bob"]), /already exists/);
+  await assert.rejects(() => d.createGroup(undefined, ["alice", "bob"]), /invalid group name/);
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("HTTP 层：groups REST roundtrip（POST 201 → GET 列表/单个 → DELETE → 404）", async () => {
+  const { d, stateDir } = await freshDaemon();
+  const { serveHttp } = await import("../src/daemon.ts");
+  const port = 8860 + Math.floor(Math.random() * 100);
+  const server = await serveHttp(d, port);
+  const base = `http://127.0.0.1:${port}`;
+  const postBot = (name: string) =>
+    fetch(base + "/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+  const postGroup = (body: unknown) =>
+    fetch(base + "/groups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    for (const n of ["http-a", "http-b", "http-c"]) await postBot(n);
+    const created = await postGroup({ name: "crew", members: ["http-a", "http-b"] });
+    assert.equal(created.status, 201);
+    const g = await created.json();
+    assert.deepEqual(g.members, ["http-a", "http-b"]);
+    assert.deepEqual(await (await fetch(base + "/groups")).json(), [g]);
+    assert.deepEqual(await (await fetch(base + "/groups/crew")).json(), g);
+    assert.equal((await fetch(base + "/groups/ghost")).status, 404);
+    // 校验失败 400：成员 bot 不存在 / 去重后不足 2
+    assert.equal((await postGroup({ name: "bad", members: ["http-a", "ghost"] })).status, 400);
+    assert.equal((await postGroup({ name: "bad2", members: ["http-a"] })).status, 400);
+    // 解散：组 404，bot 保留
+    assert.equal((await fetch(base + "/groups/crew", { method: "DELETE" })).status, 200);
+    assert.equal((await fetch(base + "/groups/crew")).status, 404);
+    assert.equal((await fetch(base + "/groups/crew", { method: "DELETE" })).status, 404);
+    assert.equal(((await (await fetch(base + "/bots/http-a")).json()) as { name: string }).name, "http-a");
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+// ---- U4：三职责角色技能模板（「技能即角色」，模板随 skillTemplates/ 分发）----
+
+test("角色模板契约：三模板齐全、frontmatter 合法、正文 200-400 字且含各自 JSON schema 关键字段", async () => {
+  const { listRoleTemplates } = await import("../src/role-templates.ts");
+  const ts = await listRoleTemplates();
+  assert.deepEqual(ts.map((t) => t.name), ["coordinator-brief", "engineer-discipline", "reviewer-verdict"]);
+  for (const t of ts) {
+    assert.ok(t.description.length > 0, `${t.name} description 必填`);
+    assert.ok(t.body.length >= 200 && t.body.length <= 400, `${t.name} 正文应 200-400 字（实际 ${t.body.length}）`);
+  }
+  // T-G1 schema：coordinator 简报四字段必须出现在正文
+  const coordinator = ts.find((t) => t.name === "coordinator-brief")!;
+  for (const field of ["objective", "owner", "done_condition", "artifacts_expected"]) {
+    assert.ok(coordinator.body.includes(field), `coordinator 正文缺简报字段 ${field}`);
+  }
+  // EXP-012 裁决格式：verdict/findings 及四 finding 字段必须出现在正文
+  const reviewer = ts.find((t) => t.name === "reviewer-verdict")!;
+  for (const token of ["verdict", "approve", "request-changes", "findings", "severity", "location", "issue", "evidence"]) {
+    assert.ok(reviewer.body.includes(token), `reviewer 正文缺裁决字段 ${token}`);
+  }
+  // poteto prove-it-works 浓缩：最小改动/先看后改/验证/不凭宣称报完成
+  const engineer = ts.find((t) => t.name === "engineer-discipline")!;
+  for (const token of ["最小改动", "先看后改", "验证命令", "不凭宣称报完成"]) {
+    assert.ok(engineer.body.includes(token), `engineer 正文缺纪律 ${token}`);
+  }
+});
+
+test("模板安装：listRoleTemplates 输出可直接 putSkill，listSkills 可见且落盘为 dsh 可发现形态", async () => {
+  const { listRoleTemplates, getRoleTemplate } = await import("../src/role-templates.ts");
+  const { d, stateDir } = await freshDaemon();
+  try {
+    await d.create("role-bot");
+    for (const t of await listRoleTemplates()) {
+      const meta = await d.putSkill("role-bot", t.name, t);
+      assert.deepEqual(meta, { name: t.name, description: t.description });
+    }
+    assert.deepEqual((await d.listSkills("role-bot")).map((s) => s.name), [
+      "coordinator-brief",
+      "engineer-discipline",
+      "reviewer-verdict",
+    ]);
+    const disk = await readFile(
+      path.join(stateDir, "bots", "role-bot", "ws", ".dsh", "skills", "reviewer-verdict", "SKILL.md"),
+      "utf8",
+    );
+    assert.match(disk, /^---\nname: reviewer-verdict\n/);
+    assert.ok(disk.includes("request-changes"));
+    assert.deepEqual(await getRoleTemplate("engineer-discipline"), (await listRoleTemplates()).find((t) => t.name === "engineer-discipline"));
+    assert.equal(await getRoleTemplate("no-such-role"), undefined);
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});

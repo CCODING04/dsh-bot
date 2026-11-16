@@ -16,6 +16,7 @@ COPY test ./test
 COPY docs ./docs
 COPY web ./web
 COPY docker ./docker
+COPY skillTemplates ./skillTemplates
 
 # bot 状态与 dsh home 均在卷内，容器可弃；容器内默认走真实 dsh driver（GLM patch 随镜像）
 ENV DSH_HOME=/dsh-home \

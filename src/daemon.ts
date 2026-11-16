@@ -5,7 +5,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createServer, type IncomingMessage } from "node:http";
-import { makeDriver, type BotEvent } from "./drivers.ts";
+import { makeDriver, dshRunOk, type BotEvent, type Driver } from "./drivers.ts";
 
 const webIndex = path.join(import.meta.dirname, "..", "web", "index.html");
 
@@ -14,6 +14,7 @@ export type Bot = {
   createdAt: string;
   status: "idle" | "running" | "awaiting_approval" | "failed";
   workspace: string;
+  sessionId: string | null; // 绑定最后一次成功轮次的 dsh 会话（resume 用，随 bots.json 持久化）；失败不动（CB3）
   events: BotEvent[];
   lastBrief: string | null;
   lastResult: string | null;
@@ -22,6 +23,7 @@ export type Bot = {
 export type DaemonOptions = {
   stateDir: string;          // 持久化根（容器内 /state）
   driverName?: string;       // stub | dsh
+  driver?: Driver;           // 直接注入 driver 实例（测试/装配用）；缺省按 driverName/env 构造
 };
 
 export class BotDaemon {
@@ -38,7 +40,10 @@ export class BotDaemon {
     await mkdir(this.opts.stateDir, { recursive: true });
     try {
       const raw = JSON.parse(await readFile(this.botsFile, "utf8")) as Bot[];
-      for (const b of raw) this.bots.set(b.name, b);
+      for (const b of raw) {
+        if (b.sessionId === undefined) b.sessionId = null; // U3 前的 bots.json 无此字段
+        this.bots.set(b.name, b);
+      }
     } catch {
       /* 首次启动无文件 */
     }
@@ -69,6 +74,7 @@ export class BotDaemon {
       createdAt: new Date().toISOString(),
       status: "idle",
       workspace,
+      sessionId: null,
       events: [{ at: new Date().toISOString(), kind: "created", detail: `workspace at ${workspace}` }],
       lastBrief: null,
       lastResult: null,
@@ -78,18 +84,35 @@ export class BotDaemon {
     return bot;
   }
 
-  /** 下发一次 brief：驱动执行、落事件、更新状态。串行化以保证事件序。 */
+  /** 同 bot 的任务串行排队（前一进程 close 后再下一个），不同 bot 并行（CB8 单写者纪律）。 */
+  private queues = new Map<string, Promise<unknown>>();
+
+  /** 下发一次 brief：同 bot 有未完成任务时等待，然后驱动执行、落事件、更新状态、维护会话绑定。 */
   async brief(name: string, brief: string): Promise<Bot> {
     const bot = this.bots.get(name);
     if (!bot) throw new Error(`no such bot: ${name}`);
-    const driver = makeDriver(this.opts.driverName ?? process.env.DSH_BOT_DRIVER);
+    const prev = this.queues.get(name) ?? Promise.resolve();
+    const run = prev.then(() => this.runBrief(bot, brief));
+    // 队尾吞掉 rejection 只是防止链式 unhandledRejection；调用方仍拿到原始拒绝
+    this.queues.set(name, run.then(() => undefined, () => undefined));
+    return run;
+  }
+
+  private async runBrief(bot: Bot, brief: string): Promise<Bot> {
+    const driver = this.opts.driver ?? makeDriver(this.opts.driverName ?? process.env.DSH_BOT_DRIVER);
     bot.status = "running";
     bot.lastBrief = brief;
     try {
-      const r = await driver.run(name, bot.workspace, brief, bot.events);
+      const r = await driver.run(bot.name, bot.workspace, brief, bot.events, { sessionId: bot.sessionId });
       bot.status = r.ok ? "idle" : "failed";
       bot.lastResult = r.summary;
-      if (bot.events.some((e) => e.kind === "approval_request")) bot.status = "awaiting_approval";
+      // CB3（主会话裁决）：失败清绑定——失败轮次不延续上下文，下次 brief 开新会话；
+      // 仅 exit==0 且 final=completed 时写入本轮 id（不依赖失败轮次是否落盘）
+      if (r.dsh && dshRunOk(r.dsh) && r.dsh.sessionId !== null) {
+        bot.sessionId = r.dsh.sessionId;
+      } else if (r.dsh) {
+        bot.sessionId = null;
+      }
     } catch (err) {
       bot.status = "failed";
       bot.lastResult = String(err);

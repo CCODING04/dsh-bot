@@ -64,6 +64,10 @@ textarea{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-si
         <input id="newgroup" placeholder="组名,成员1,成员2" style="width:100%">
         <button onclick="createGroup()">建组</button>
       </div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-top:10px;border-top:1px dashed var(--line);padding-top:8px">
+        <input id="newdisp" placeholder="objective（先点选上方组）" style="width:100%">
+        <button onclick="doDispatch()">派发任务（dispatch）</button>
+      </div>
     </details>
   </aside>
   <div id="chat">
@@ -86,7 +90,7 @@ textarea{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-si
   </div>
 </main>
 <script>
-let bots=[],groups=[],cur=null,knownEvt=0,timer=null,failNoted=false;
+let bots=[],groups=[],cur=null,knownEvt=0,timer=null,failNoted=false,curGroup=null,knownGEvt=0;
 const $=id=>document.getElementById(id);
 const feed=$("feed");
 const MODES=["read-only","workspace-write","danger-full-access"]; // 与容器枚举一致（规格 C6），auto 不可选
@@ -139,13 +143,13 @@ async function addSkill(){
     $("skname").value="";$("skdesc").value="";$("skbody").value="";await loadSkills();skillNote()}catch(e){alert(e.message)}}
 async function delSkill(n){
   try{await api(`/bots/${cur}/skills/${encodeURIComponent(n)}`,{method:"DELETE"});await loadSkills();skillNote()}catch(e){alert(e.message)}}
-// U4：GROUPS 极简支持（列表+建组+解散；dispatch UI 归 T-G2，不做）
+// U4：GROUPS 支持（列表+建组+解散+选中派发）；dispatch 为异步受理，进度经组事件流呈现
 async function loadGroups(){try{groups=await api("/groups")}catch(e){groups=[]}
   const el=$("grouplist");el.innerHTML=groups.length?"":'<span style="color:var(--mut)">（暂无 group）</span>';
-  for(const g of groups){const d=document.createElement("div");d.className="bot-item";
-    const m=document.createElement("div");m.className="skmeta";m.innerHTML=`<b>${esc(g.name)}</b><span>${esc(g.members.join(", "))}</span>`;
+  for(const g of groups){const st=g.status||"idle";const d=document.createElement("div");d.className="bot-item"+(curGroup===g.name?" on":"");
+    const m=document.createElement("div");m.className="skmeta";m.innerHTML=`<b>${esc(g.name)}</b><span>${esc(g.members.join(", "))} · ${esc(st)}${g.dispatches&&g.dispatches.length?` · ${g.dispatches.length} 次派发`:""}</span>`;
     const btn=document.createElement("button");btn.className="ghost";btn.textContent="解散";btn.onclick=ev=>{ev.stopPropagation();delGroup(g.name)};
-    d.onclick=()=>add("evt",`group「${g.name}」成员：${g.members.join("、")} · 建于 ${g.createdAt.slice(0,10)}`);
+    d.onclick=()=>{curGroup=g.name;knownGEvt=0;feed.innerHTML="";add("evt",`已选中 group「${g.name}」（${g.members.join("、")}）· 状态 ${st} · 下方输入 objective 派发任务`);loadGroups()};
     d.append(m,btn);el.appendChild(d)}}
 async function createGroup(){const parts=$("newgroup").value.split(",").map(s=>s.trim()).filter(Boolean);
   if(parts.length<3)return alert("格式：组名,成员1,成员2（成员为已有 bot 名，去重后至少 2 个）");
@@ -153,8 +157,19 @@ async function createGroup(){const parts=$("newgroup").value.split(",").map(s=>s
   try{const g=await api("/groups",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name,members})});
     $("newgroup").value="";add("evt",`group「${g.name}」已创建（${g.members.join("、")}）`);loadGroups()}catch(e){alert(e.message)}}
 async function delGroup(n){try{await api("/groups/"+encodeURIComponent(n),{method:"DELETE"});
-  add("evt",`group「${n}」已解散（bot 不受影响）`);loadGroups()}catch(e){alert(e.message)}}
-loadBots();loadGroups();timer=setInterval(poll,2000);
+  if(curGroup===n){curGroup=null}add("evt",`group「${n}」已解散（bot 不受影响）`);loadGroups()}catch(e){alert(e.message)}}
+async function doDispatch(){if(!curGroup)return alert("先在 GROUPS 列表点选一个组");
+  const t=$("newdisp").value.trim();if(!t)return alert("输入 objective（一句话任务目标）");
+  try{const r=await api(`/groups/${encodeURIComponent(curGroup)}/dispatch`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({objective:t})});
+    $("newdisp").value="";add("me",`[dispatch ${r.dispatchId}] ${t}`);
+    add("evt",`dispatch ${r.dispatchId} 已受理（state: ${r.state}）——coordinator→engineer→reviewer 串行编排，进度见下方事件流`);loadGroups()}catch(e){alert(e.message)}}
+// 组事件流轮询：dispatch 各阶段（step/brief_received/done/error）与终态 group_summary
+async function pollGroup(){if(!curGroup)return;try{const g=await api("/groups/"+encodeURIComponent(curGroup));
+  for(const e of g.events.slice(knownGEvt)){
+    if(e.kind==="permission_blocked")addBlocked(e.detail);
+    else if(e.kind!=="created")add("evt",`[g:${e.kind}] ${e.detail}`)}
+  knownGEvt=g.events.length}catch{}}
+loadBots();loadGroups();timer=setInterval(()=>{poll();loadGroups();pollGroup()},2000);
 </script>
 </body>
 </html>

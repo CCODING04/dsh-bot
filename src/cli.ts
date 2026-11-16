@@ -3,7 +3,7 @@
 //   node src/cli.ts create <name>
 //   node src/cli.ts brief <name> <text...>
 //   node src/cli.ts skills <name> [list]   # 列出 bot 技能（U3-3）
-//   node src/cli.ts groups [name]          # 列出 group / 查看单个（U4；dispatch 编排属 T-G2，接口预留不实现）
+//   node src/cli.ts groups [name]          # 列出 group / 查看单个（含 status 与 dispatches；dispatch 经 HTTP 发起）
 //   node src/cli.ts status [name]
 //   node src/cli.ts logs <name>
 //   node src/cli.ts serve [port]
@@ -49,7 +49,7 @@ switch (cmd) {
     break;
   }
   case "groups": {
-    // dispatch 编排属 T-G2（coordinator 决策），本命令只做注册/查询（u4-group-design §1）。
+    // dispatch 发起走 HTTP（daemon 后台编排），本命令只做注册/查询（u4-group-design §3）。
     // 输出走 process.stdout.write：门禁 L1 pre-commit 对 src 全量词法拦调试输出（pr 层对
     // cli.ts 的 stdout 豁免未同步到 L1），新增行用直写语义避开误伤，非调试残留。
     const out = (s: string) => process.stdout.write(s + "\n");

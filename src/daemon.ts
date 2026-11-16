@@ -23,6 +23,45 @@ function parsePermissionMode(v: unknown): PermissionMode {
   throw new Error(`invalid permissionMode: ${JSON.stringify(v)} (expected ${PERMISSION_MODES.join(" | ")})`);
 }
 
+/**
+ * reviewer 裁决解析（宽松三级降级）：整段 JSON → 文本中嵌入的 JSON 对象 → 畸形文本里的裸 "verdict" 键值。
+ * 都取不出合法取值 → null（不可判定）。null 绝不当作 approve：静默 approve 正是 T-G3 要拦的失败模式。
+ */
+export function parseVerdict(text: string): "approve" | "request-changes" | null {
+  const fromObj = (o: unknown): "approve" | "request-changes" | undefined => {
+    const v = (o as { verdict?: unknown } | null)?.verdict;
+    return v === "approve" || v === "request-changes" ? v : undefined;
+  };
+  try {
+    const v = fromObj(JSON.parse(text));
+    if (v) return v;
+  } catch {
+    /* 非纯 JSON，继续降级 */
+  }
+  const obj = /\{[\s\S]*\}/.exec(text); // 贪婪到末个 }：findings 内嵌对象与尾随文字都安全
+  if (obj) {
+    try {
+      const v = fromObj(JSON.parse(obj[0]));
+      if (v) return v;
+    } catch {
+      /* 伪 JSON 文本，继续降级 */
+    }
+  }
+  const bare = /"verdict"\s*:\s*"(approve|request-changes)"/.exec(text);
+  return bare ? (bare[1] as "approve" | "request-changes") : null;
+}
+
+/** 三角色从成员名解析（T-G0 起的命名约定：coordinator-/engineer-/reviewer- 前缀）；缺任一角即拒绝 dispatch。 */
+function resolveGroupRoles(members: string[]): { coordinator: string; engineer: string; reviewer: string } {
+  const pick = (role: string) => members.find((m) => m === role || m.startsWith(`${role}-`));
+  const roles = { coordinator: pick("coordinator"), engineer: pick("engineer"), reviewer: pick("reviewer") };
+  const missing = Object.entries(roles).filter(([, m]) => !m).map(([r]) => r);
+  if (missing.length > 0) {
+    throw new Error(`group members must include one ${missing.join("/")}-* bot each for dispatch (got: ${members.join(", ")})`);
+  }
+  return roles as { coordinator: string; engineer: string; reviewer: string };
+}
+
 export type Bot = {
   name: string;
   // awaiting_approval 已删（U3-2）：headless 无实时审批通道，该态永不可达；
@@ -42,12 +81,24 @@ export type DaemonOptions = {
   driver?: Driver;           // 直接注入 driver 实例（测试/装配用）；缺省按 driverName/env 构造
 };
 
-/** 命名 bot 集合（U4/T-G0）：daemon 只做注册与查询，不做任何调度决策（u4-group-design §1）。 */
+/** 一次 dispatch 编排记录（U4/T-G2）。存于 Group.dispatches（append-only），id 即 1 基数组位置，跨持久化稳定。 */
+export type GroupDispatch = {
+  objective: string;
+  dispatchedAt: string;
+  state: "running" | "done" | "needs-rework" | "failed";
+  summary: string;
+  verdict: string | null; // reviewer 终轮回复全文；未走到审查即失败为 null
+  rounds: number; // 已执行的 engineer 轮次（≤2，回环上限见 T-G3 判据）
+};
+
+/** 命名 bot 集合（U4）：daemon 只做注册与编排驱动，决策内容在各角色 bot 的回复里（u4-group-design §1/§2）。 */
 export type Group = {
   name: string;
   members: string[]; // bot 名，去重后 ≥2；解散组不删 bot
   createdAt: string;
-  events: BotEvent[]; // 复用 bot 事件 kind；dispatch/brief/verdict 事件流归 T-G2
+  status: "idle" | "dispatching" | "done" | "needs-rework" | "failed"; // 随最近一次 dispatch 收敛到终态
+  dispatches: GroupDispatch[];
+  events: BotEvent[]; // 复用 bot 事件 kind：step=dispatch 开始/group_summary、brief_received/done=各阶段、error=编排失败
 };
 
 export class BotDaemon {
@@ -77,7 +128,11 @@ export class BotDaemon {
     }
     try {
       const raw = JSON.parse(await readFile(this.groupsFile, "utf8")) as Group[];
-      for (const g of raw) this.groups.set(g.name, g);
+      for (const g of raw) {
+        if (g.status === undefined) g.status = "idle"; // T-G2 前的 groups.json 无此字段
+        if (g.dispatches === undefined) g.dispatches = [];
+        this.groups.set(g.name, g);
+      }
     } catch {
       /* 首次启动无文件 */
     }
@@ -145,8 +200,8 @@ export class BotDaemon {
     return bot;
   }
 
-  // ---- bot group（U4/T-G0）：命名 bot 集合的注册与查询。dispatch 编排属 T-G2（coordinator bot
-  // 决策），daemon 不做智能调度——接口在此预留，本单元不实现（u4-group-design §1/§3）。
+  // ---- bot group（U4）：命名 bot 集合的注册/查询 + dispatch 编排（T-G2）。daemon 只做串行委派
+  // 与结果聚合，不产出任何决策内容——简报/产物/裁决都是各角色 bot 的回复（u4-group-design §1/§2）。
 
   listGroups(): Group[] {
     return [...this.groups.values()];
@@ -175,6 +230,8 @@ export class BotDaemon {
       name,
       members: distinct,
       createdAt: new Date().toISOString(),
+      status: "idle",
+      dispatches: [],
       events: [{ at: new Date().toISOString(), kind: "created", detail: `members: ${distinct.join(", ")}` }],
     };
     this.groups.set(name, group);
@@ -186,6 +243,120 @@ export class BotDaemon {
   async deleteGroup(name: string): Promise<void> {
     if (!this.groups.delete(name)) throw new Error(`no such group: ${name}`);
     await this.persistGroups();
+  }
+
+  /** 单次 dispatch 详情：id 为 1 基字符串（append-only 数组位置）。 */
+  getDispatch(groupName: string, dispatchId: string): GroupDispatch | undefined {
+    const g = this.groups.get(groupName);
+    if (!g) return undefined;
+    const i = Number(dispatchId);
+    return Number.isInteger(i) && i >= 1 && i <= g.dispatches.length ? g.dispatches[i - 1] : undefined;
+  }
+
+  /**
+   * 发起一次 dispatch（异步受理）：daemon 后台串行委派 coordinator→engineer→reviewer，每阶段用
+   * 既有 brief() 驱动（同 bot 串行队列即等待逻辑）；verdict=request-changes 回环一次（上限 2 轮，
+   * T-G3）。返回即已受理，编排结果经 getDispatch / GET /groups/:g/dispatches/:id 查询。
+   */
+  async dispatch(groupName: string, objective: unknown): Promise<{ dispatchId: string; state: GroupDispatch["state"] }> {
+    if (typeof objective !== "string" || objective.trim().length === 0) {
+      throw new Error("objective must be a non-empty string");
+    }
+    const group = this.groups.get(groupName);
+    if (!group) throw new Error(`no such group: ${groupName}`);
+    if (group.status === "dispatching") throw new Error(`group ${groupName} is dispatching; wait for it to settle`);
+    const roles = resolveGroupRoles(group.members);
+    const dispatch: GroupDispatch = {
+      objective: objective.trim(),
+      dispatchedAt: new Date().toISOString(),
+      state: "running",
+      summary: "",
+      verdict: null,
+      rounds: 0,
+    };
+    const dispatchId = String(group.dispatches.length + 1);
+    group.dispatches.push(dispatch);
+    group.status = "dispatching";
+    this.pushGroupEvent(group, "step", `dispatch ${dispatchId} started: ${dispatch.objective}`);
+    await this.persistGroups();
+    // orchestrateDispatch 全捕获（一切失败收敛为 failed），promise 永不 reject，无需 await
+    void this.orchestrateDispatch(group, dispatch, dispatchId, roles);
+    return { dispatchId, state: dispatch.state };
+  }
+
+  private pushGroupEvent(group: Group, kind: BotEvent["kind"], detail: string): void {
+    group.events.push({ at: new Date().toISOString(), kind, detail });
+  }
+
+  /** 单阶段：brief 驱动对应角色 bot（复用 per-bot 串行队列的等待逻辑），阶段结果落 group.events。 */
+  private async runDispatchStage(group: Group, dispatchId: string, botName: string, text: string, stage: string): Promise<string> {
+    this.pushGroupEvent(group, "brief_received", `dispatch ${dispatchId} stage=${stage} → ${botName}: ${text.slice(0, 160)}`);
+    const bot = await this.brief(botName, text);
+    if (bot.status === "failed") throw new Error(`stage ${stage}: bot ${botName} run failed: ${bot.lastResult ?? "(no detail)"}`);
+    this.pushGroupEvent(group, "done", `dispatch ${dispatchId} stage=${stage} ${botName}: ${(bot.lastResult ?? "").slice(0, 200)}`);
+    return bot.lastResult ?? "";
+  }
+
+  private async orchestrateDispatch(
+    group: Group,
+    dispatch: GroupDispatch,
+    dispatchId: string,
+    roles: { coordinator: string; engineer: string; reviewer: string },
+  ): Promise<void> {
+    try {
+      const mission = await this.runDispatchStage(
+        group, dispatchId, roles.coordinator,
+        `你是 coordinator 角色（技能 coordinator-brief）。原始需求如下，请产出任务简报 JSON（objective/owner/done_condition/artifacts_expected 四字段，只输出 JSON）：\n\n${dispatch.objective}`,
+        "coordinator",
+      );
+      dispatch.rounds = 1;
+      // v0（u4-group-design §2）：coordinator 回复全文不解析，直接作为 engineer 的任务简报输入
+      let artifacts = await this.runDispatchStage(
+        group, dispatchId, roles.engineer,
+        `你是 engineer 角色（技能 engineer-discipline）。按以下任务简报在你的工作区完成实现，产物附验证证据（文件路径+验证命令+预期输出）：\n\n${mission}`,
+        "engineer",
+      );
+      let verdictText = await this.runDispatchStage(
+        group, dispatchId, roles.reviewer,
+        `你是 reviewer 角色（技能 reviewer-verdict）。审查以下任务：只读、必执行验证、最后只输出裁决 JSON（verdict/findings）。任务简报：\n${mission}\n\n产物自述与证据：\n${artifacts}`,
+        "reviewer",
+      );
+      if (parseVerdict(verdictText) === "request-changes") {
+        // 回环一次（第二轮，T-G3）：engineer 按裁决修复 → reviewer 重新裁决；仍拒即终态 needs-rework
+        dispatch.rounds = 2;
+        artifacts = await this.runDispatchStage(
+          group, dispatchId, roles.engineer,
+          `你是 engineer 角色（技能 engineer-discipline）。上一轮产物未通过审查，请按裁决修复并重新自验：\n\n任务简报：\n${mission}\n\n上轮产物自述：\n${artifacts}\n\n审查裁决：\n${verdictText}`,
+          "engineer-r2",
+        );
+        verdictText = await this.runDispatchStage(
+          group, dispatchId, roles.reviewer,
+          `你是 reviewer 角色（技能 reviewer-verdict）。上一轮裁决为 request-changes，请对修复后的产物重新裁决：只读、必执行验证、输出裁决 JSON。任务简报：\n${mission}\n\n修复后产物自述：\n${artifacts}\n\n上轮裁决：\n${verdictText}`,
+          "reviewer-r2",
+        );
+      }
+      dispatch.verdict = verdictText;
+      const verdict = parseVerdict(verdictText);
+      if (verdict === "approve") {
+        dispatch.state = "done";
+        dispatch.summary = `approved after ${dispatch.rounds} round(s)`;
+      } else if (verdict === "request-changes") {
+        dispatch.state = "needs-rework";
+        dispatch.summary = `request-changes after ${dispatch.rounds} round(s) (loop cap reached)`;
+      } else {
+        // 裁决不可解析 = 既不能宣布通过也不能诬指需返工：诚实失败（T-G3：静默 approve 算失败）
+        dispatch.state = "failed";
+        dispatch.summary = `reviewer verdict unparseable: ${verdictText.slice(0, 200)}`;
+      }
+    } catch (err) {
+      dispatch.state = "failed";
+      dispatch.summary = String(err);
+      this.pushGroupEvent(group, "error", `dispatch ${dispatchId} failed: ${String(err)}`);
+    } finally {
+      this.pushGroupEvent(group, "step", `dispatch ${dispatchId} group_summary: state=${dispatch.state} rounds=${dispatch.rounds} ${dispatch.summary}`);
+      group.status = dispatch.state === "running" ? "failed" : dispatch.state; // 收敛时必为终态，分支只为过类型
+      await this.persistGroups();
+    }
   }
 
   /** 同 bot 的任务串行排队（前一进程 close 后再下一个），不同 bot 并行（CB8 单写者纪律）。 */
@@ -291,7 +462,7 @@ export class BotDaemon {
   }
 }
 
-/** 极简 JSON HTTP 服务：POST/GET /bots, GET/PATCH /bots/:n, POST /bots/:n/brief, bots skills CRUD，POST/GET /groups, GET/DELETE /groups/:n；返回 server 以便测试关闭 */
+/** 极简 JSON HTTP 服务：POST/GET /bots, GET/PATCH /bots/:n, POST /bots/:n/brief, bots skills CRUD，POST/GET /groups, POST /groups/:g/dispatch, GET /groups/:g/dispatches/:id, GET/DELETE /groups/:n；返回 server 以便测试关闭 */
 export function serveHttp(daemon: BotDaemon, port: number): Promise<import("node:http").Server> {
   return new Promise((resolve) => {
     const server = createServer(async (req, res) => {
@@ -348,8 +519,15 @@ export function serveHttp(daemon: BotDaemon, port: number): Promise<import("node
           const g = daemon.getGroup(parts[1]);
           return g ? json(200, g) : json(404, { error: `no such group: ${parts[1]}` });
         }
-        // T-G2 预留位：POST /groups/:g/dispatch {task} 按职责路由（coordinator 编排）。
-        // 本单元（T-G0/T-G1 实现层）只做注册/查询/解散，daemon 不做智能决策（u4-group-design §1）。
+        // U4/T-G2：dispatch 异步受理（daemon 后台编排），详情另查 dispatches/:id
+        if (req.method === "POST" && parts.length === 3 && parts[0] === "groups" && parts[2] === "dispatch") {
+          const body = JSON.parse(await readBody(req)) as { objective?: unknown };
+          return json(200, await daemon.dispatch(parts[1], body.objective));
+        }
+        if (req.method === "GET" && parts.length === 4 && parts[0] === "groups" && parts[2] === "dispatches") {
+          const disp = daemon.getDispatch(parts[1], parts[3]);
+          return disp ? json(200, disp) : json(404, { error: `no such dispatch: ${parts[1]}/dispatches/${parts[3]}` });
+        }
         if (req.method === "DELETE" && parts.length === 2 && parts[0] === "groups") {
           if (!daemon.getGroup(parts[1])) return json(404, { error: `no such group: ${parts[1]}` });
           await daemon.deleteGroup(parts[1]);

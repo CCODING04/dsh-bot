@@ -29,6 +29,8 @@ coordinator 收 dispatch → 产出任务简报 → curl POST /bots/engineer-x/b
 
 > 进度 2026-11-16（T-G0/T-G1 实现层）：交付物 1 的 groups CRUD（注册/查询/解散，随 groups.json 持久化）与交付物 2 的三技能模板已落地——`skillTemplates/` 三份 SKILL.md（coordinator-brief / engineer-discipline / reviewer-verdict），读取在 `src/role-templates.ts`，经既有 `PUT /bots/:n/skills` 安装；交付物 1 的 dispatch 路由与 group 事件流、交付物 3/4/5 归 T-G2 及后续。
 
+> 进度 2026-11-16（T-G2 dispatch 编排实现层）：daemon 侧编排已落地（`src/daemon.ts` 的 `BotDaemon.dispatch()`）——`POST /groups/:g/dispatch {objective}` 异步受理（返回 `{dispatchId, state}`，daemon 后台串行委派 coordinator→engineer→reviewer，每阶段复用既有 per-bot 队列的 `brief()` 驱动），`GET /groups/:g/dispatches/:id` 查详情；`Group` 增加 `status`/`dispatches`（`GroupDispatch`：objective/dispatchedAt/state/summary/verdict/rounds），随 groups.json 持久化。角色按成员名前缀解析（coordinator-/engineer-/reviewer-，缺任一即拒绝）；coordinator 简报 JSON 不解析、全文透传 engineer（v0，§2 路由形态由 daemon 代行，bot 自驱 curl 协议仍归后续）；verdict 宽松三级解析（纯 JSON→嵌入对象→裸键值），不可判定 → dispatch failed，绝不静默 approve；request-changes 回环一次（上限 2 轮，第二轮仍拒 → 终态 needs-rework，T-G3 判据）；每阶段结果以既有 BotEvent kind 落 group.events（step=dispatch 开始/group_summary、brief_received/done=各阶段、error=编排失败）。测试：`test/daemon.test.ts` T-G2 节 8 项（串行顺序/回环上限/重入守门/失败收敛/HTTP 形态）；真实进程冒烟：`node test/e2e/dispatch-smoke.mjs`（scripted driver，不需 GLM）。开放点：编排级总熔断未做（现依赖 dsh driver 单轮 10min 超时）；bot 调 API 越权审计面（§4）归 T-G4。
+
 1. daemon：groups CRUD + dispatch 路由 + group 事件流（EXP-013 存档位）
 2. 三个技能模板（SKILL.md，coordinator 含委派 curl 协议原文）
 3. `POST /bots/:n/brief` 增加 `waitFor: "completion"` 语义或 coordinator 轮询节奏约定（防死循环：回环上限 2）

@@ -24,4 +24,4 @@
 
 - GAP-001（2026-11-16）：`npm i -g` 在 L3 未加载期真跑 ×2 —— whyMissed=层未激活；remediation=ws 根配置+会话重启加载（EXP-007 附录）
 - GAP-002（2026-11-16）：`--patch/--json` 顺序 bug 穿过 13 项单测、被容器 E2E 抓住 —— whyMissed=规则缺失（单测无法检验 CLI 解析语义）；remediation=参数顺序防回归断言（EXP-008）
-- GAP-003（2026-11-16）：rebase 冲突标记随坏合并提交穿过门禁（CI 亦未拦，时序上先于规则存在）—— whyMissed=规则缺失；remediation=**新规则 conflict-marker（检查 6）+ selftest 样本**（当日闭环，EXP-010）
+- GAP-003（2026-11-16）：rebase 冲突标记随坏合并提交穿过门禁（CI 亦未拦，时序上先于规则存在）—— whyMissed=规则缺失；remediation=**新规则 conflict-marker（检查 6）**+ 手动 pre-commit 拦截实测 + CI 全量复查（暂存区类样本属电池范畴外，见 gate-selftest.mjs 头注；当日闭环，EXP-010）

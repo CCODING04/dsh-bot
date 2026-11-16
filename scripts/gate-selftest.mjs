@@ -60,7 +60,9 @@ t("台账脱敏：bigmodel 形态", mask(`x=${bigmodelShape}`) === "x=aaaaaa***"
 t("台账脱敏：sk- 形态", mask(`t=${skShape}`) === "t=sk-ab***");
 
 // ---- selftest 类断言：本电池产生的台账事件全部 kind=selftest ----
-if (before !== null) {
+if (before === null) {
+  console.log("- 台账隔离断言 skipped（台账尚不存在，首跑无基线；二跑起生效）");
+} else {
   const lines = readFileSync(".gate-ledger/events.jsonl", "utf8").trim().split("\n");
   const recent = lines.slice(before);
   t(

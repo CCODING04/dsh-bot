@@ -19,6 +19,10 @@ export const PERMISSION_BLOCKED_CODES: ReadonlySet<string> = new Set([
   "AUTO_REVIEW_FAILED",
 ]);
 
+/** dsh permission preset 三值枚举（容器 0.2.2-rc.1 实测，C6；auto 不可选——headless 未组合 auto-review）。 */
+export const PERMISSION_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
+
 /** tool_result 事件携带的持久化错误形状（上游 json-stream 投影，{name, code, reason?}）。 */
 export type ToolResultError = { name: string; code?: string; reason?: string };
 
@@ -143,7 +147,10 @@ export function dshResultEvents(res: DshRunResult, at: string): BotEvent[] {
   return events;
 }
 
-export type RunOptions = { sessionId?: string | null };
+export type RunOptions = {
+  sessionId?: string | null;
+  permissionMode?: PermissionMode; // per-bot 姿态（daemon 每次调用显式给确定值，不依赖 env 推导，CB2/规格 3.1.3）
+};
 
 export type DriverResult = { ok: boolean; summary: string; dsh?: DshRunResult };
 
@@ -178,7 +185,7 @@ export function dshDriver(opts: {
   dshBin?: string;
   patchPath?: string;
   approvalPolicy?: "ask" | "never";
-  permissionMode?: "read-only" | "workspace-write" | "danger-full-access";
+  permissionMode?: PermissionMode;
   timeoutMs?: number;
 } = {}): Driver {
   const dshBin = opts.dshBin ?? process.env.DSH_BIN ?? "dsh";
@@ -191,11 +198,13 @@ export function dshDriver(opts: {
     async run(botName, workspace, brief, events, runOpts) {
       const { spawn } = await import("node:child_process");
       const sessionId = runOpts?.sessionId ?? null;
-      const args = buildDshArgs({ patchPath, approvalPolicy, sessionId, permissionMode });
+      // per-run（per-bot）配置优先于 driver 实例级默认；都缺省才交给 dsh env 推导（A5）
+      const mode = runOpts?.permissionMode ?? permissionMode;
+      const args = buildDshArgs({ patchPath, approvalPolicy, sessionId, permissionMode: mode });
       events.push({
         at: new Date().toISOString(),
         kind: "brief_received",
-        detail: `${dshBin} headless --json · patch=${patchPath} · approval=${approvalPolicy} · session=${sessionId ?? "new"} · cwd=${workspace}`,
+        detail: `${dshBin} headless --json · patch=${patchPath} · approval=${approvalPolicy} · mode=${mode ?? "env"} · session=${sessionId ?? "new"} · cwd=${workspace}`,
       });
       let timedOut = false;
       let stderrTail = "";

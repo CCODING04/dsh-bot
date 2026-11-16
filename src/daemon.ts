@@ -2,10 +2,15 @@
 // U1 形态：进程内 registry（JSON 持久化），HTTP + CLI 共用同一实现。
 // 每个 bot 的"电脑"= state 目录下独立 workspace（容器内卷）。
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import { createServer, type IncomingMessage } from "node:http";
 import { makeDriver, dshRunOk, type BotEvent, type Driver } from "./drivers.ts";
+import { SKILL_NAME_RE, parseSkillFile, serializeSkillFile, skillDir, skillsRoot, type SkillMeta } from "./skills.ts";
+
+const execFileP = promisify(execFile);
 
 const webIndex = path.join(import.meta.dirname, "..", "web", "index.html");
 
@@ -69,13 +74,23 @@ export class BotDaemon {
     if (this.bots.has(name)) throw new Error(`bot already exists: ${name}`);
     const workspace = path.join(this.opts.stateDir, "bots", name, "ws");
     await mkdir(workspace, { recursive: true });
+    // 工作区内自建 .git 钉住 dsh 技能 projectRoot（= 最近含 .git 的祖先，K2）：
+    // /state 上层一旦出现 .git，本工作区 .dsh/skills 会整体失效（C5/K6 实测陷阱）。
+    // 仅以退出码判成败（Windows 下 git init 的分支名 hint 走 stderr 但退出码为 0）；
+    // git 不可用 → 降级为只建目录，不阻塞 bot 创建，事件注明。
+    let pinNote = "";
+    try {
+      await execFileP("git", ["init", "-q"], { cwd: workspace });
+    } catch (err) {
+      pinNote = `; git init unavailable, projectRoot not pinned (C5/K6 defense degraded): ${err instanceof Error ? err.message : String(err)}`;
+    }
     const bot: Bot = {
       name,
       createdAt: new Date().toISOString(),
       status: "idle",
       workspace,
       sessionId: null,
-      events: [{ at: new Date().toISOString(), kind: "created", detail: `workspace at ${workspace}` }],
+      events: [{ at: new Date().toISOString(), kind: "created", detail: `workspace at ${workspace}${pinNote}` }],
       lastBrief: null,
       lastResult: null,
     };
@@ -121,6 +136,67 @@ export class BotDaemon {
     await this.persist();
     return bot;
   }
+
+  // ---- bot 技能管理（U3-3）：每 bot 工作区 .dsh/skills 纯数据文件，增删即文件操作 ----
+  // TODO(U3+/K9): 共享技能目录 $DSH_HOME/skills（rank 400，全 bot 通用）与 DSH_PATCH overlay 的
+  // customSkillDirs（rank 300）本单元不实现；bot 工作区技能（rank 100）天然压过全局，可做 per-bot 覆盖。
+
+  /** 列出技能（解析各 <name>/SKILL.md frontmatter）。非法/缺 SKILL.md 的目录与 dsh 发现行为一致：跳过。 */
+  async listSkills(botName: string): Promise<SkillMeta[]> {
+    const bot = this.bots.get(botName);
+    if (!bot) throw new Error(`no such bot: ${botName}`);
+    const root = skillsRoot(bot.workspace);
+    let entries;
+    try {
+      entries = await readdir(root, { withFileTypes: true });
+    } catch {
+      return []; // 尚未创建任何技能
+    }
+    const out: SkillMeta[] = [];
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      try {
+        const { name, description } = parseSkillFile(await readFile(path.join(root, e.name, "SKILL.md"), "utf8"));
+        out.push({ name, description }); // 列表契约只暴露元数据，不带正文
+      } catch {
+        // dsh 不会发现它，列表同样不可见（K3）
+      }
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** 新增/覆盖技能（幂等 upsert）：校验 frontmatter 契约后整文件重写。 */
+  async putSkill(botName: string, skillName: string, input: { name: string; description: string; body: string }): Promise<SkillMeta> {
+    const bot = this.bots.get(botName);
+    if (!bot) throw new Error(`no such bot: ${botName}`);
+    if (typeof input.name !== "string" || typeof input.description !== "string" || typeof input.body !== "string") {
+      throw new Error("skill input must be {name: string, description: string, body: string}");
+    }
+    if (!SKILL_NAME_RE.test(skillName)) {
+      throw new Error(`invalid skill name: ${skillName} (kebab-case ${SKILL_NAME_RE.source}, K3)`);
+    }
+    if (input.name !== skillName) {
+      throw new Error(`skill name mismatch: body name "${input.name}" != :skill "${skillName}"`);
+    }
+    const description = input.description.trim();
+    if (!description || /[\r\n]/.test(description)) {
+      throw new Error("skill description required, single line (K3)");
+    }
+    const dir = skillDir(bot.workspace, skillName);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "SKILL.md"), serializeSkillFile({ name: skillName, description, body: input.body }), "utf8");
+    return { name: skillName, description };
+  }
+
+  /** 删除技能目录（幂等：不存在同样收敛为"无此技能"）。 */
+  async deleteSkill(botName: string, skillName: string): Promise<void> {
+    const bot = this.bots.get(botName);
+    if (!bot) throw new Error(`no such bot: ${botName}`);
+    if (!SKILL_NAME_RE.test(skillName)) {
+      throw new Error(`invalid skill name: ${skillName} (kebab-case ${SKILL_NAME_RE.source}, K3)`);
+    }
+    await rm(skillDir(bot.workspace, skillName), { recursive: true, force: true });
+  }
 }
 
 /** 极简 JSON HTTP 服务：POST /bots, POST /bots/:n/brief, GET /bots, GET /bots/:n；返回 server 以便测试关闭 */
@@ -151,6 +227,20 @@ export function serveHttp(daemon: BotDaemon, port: number): Promise<import("node
         if (req.method === "POST" && parts.length === 3 && parts[0] === "bots" && parts[2] === "brief") {
           const body = JSON.parse(await readBody(req)) as { text: string };
           return json(200, await daemon.brief(parts[1], body.text));
+        }
+        if (req.method === "GET" && parts.length === 3 && parts[0] === "bots" && parts[2] === "skills") {
+          if (!daemon.get(parts[1])) return json(404, { error: `no such bot: ${parts[1]}` });
+          return json(200, await daemon.listSkills(parts[1]));
+        }
+        if (req.method === "PUT" && parts.length === 4 && parts[0] === "bots" && parts[2] === "skills") {
+          if (!daemon.get(parts[1])) return json(404, { error: `no such bot: ${parts[1]}` });
+          const body = JSON.parse(await readBody(req)) as { name: string; description: string; body: string };
+          return json(200, await daemon.putSkill(parts[1], parts[3], body));
+        }
+        if (req.method === "DELETE" && parts.length === 4 && parts[0] === "bots" && parts[2] === "skills") {
+          if (!daemon.get(parts[1])) return json(404, { error: `no such bot: ${parts[1]}` });
+          await daemon.deleteSkill(parts[1], parts[3]);
+          return json(200, { ok: true });
         }
         json(404, { error: "not found" });
       } catch (err) {

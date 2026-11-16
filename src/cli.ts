@@ -2,6 +2,7 @@
 // 用法：
 //   node src/cli.ts create <name>
 //   node src/cli.ts brief <name> <text...>
+//   node src/cli.ts skills <name> [list]   # 列出 bot 技能（U3-3）
 //   node src/cli.ts status [name]
 //   node src/cli.ts logs <name>
 //   node src/cli.ts serve [port]
@@ -31,6 +32,21 @@ switch (cmd) {
     console.log(JSON.stringify(args[0] ? daemon.get(args[0]) : daemon.list(), null, 2));
     break;
   }
+  case "skills": {
+    const [name, sub] = args;
+    if (!name || (sub && sub !== "list")) {
+      console.error("usage: dsh-bot skills <bot> [list]");
+      process.exit(1);
+    }
+    if (!daemon.get(name)) {
+      console.error(`no such bot: ${name}`);
+      process.exit(1);
+    }
+    const skills = await daemon.listSkills(name);
+    if (skills.length === 0) console.log("(no skills)");
+    for (const s of skills) console.log(`${s.name.padEnd(30)} ${s.description}`);
+    break;
+  }
   case "logs": {
     const bot = daemon.get(args[0]);
     if (!bot) {
@@ -47,6 +63,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.error("usage: dsh-bot <create|brief|status|logs|serve> ...");
+    console.error("usage: dsh-bot <create|brief|skills|status|logs|serve> ...");
     process.exit(1);
 }

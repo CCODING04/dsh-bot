@@ -1,7 +1,7 @@
 // U1/U3 验收测试（node:test，零依赖；stub/注入 driver + 纯函数，不触碰网络与本机 dsh）
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BotDaemon } from "../src/daemon.ts";
@@ -291,4 +291,95 @@ test("per-bot 串行队列：同 bot 排队（前一完成才开下一个），�
   await Promise.all([p1, p2, p3]);
   assert.equal(maxOverlap, 2, "同 bot 从未并行（若并行则与 b1 叠成 3）");
   await rm(stateDir, { recursive: true, force: true });
+});
+
+// ---- U3-3：bot 技能管理（K1/K3 + C5/K6 git init 钉 projectRoot）----
+
+test("技能 CRUD roundtrip：写 → 列表 → 落盘 .dsh/skills/<name>/SKILL.md → 删（幂等）", async () => {
+  const { d, stateDir } = await freshDaemon();
+  const bot = await d.create("sk-bob");
+  // git init 钉住 projectRoot（C5/K6）：工作区内应有 .git，此后技能路径恒为 <ws>/.dsh/skills
+  assert.ok((await stat(path.join(bot.workspace, ".git"))).isDirectory(), "create 应在工作区 git init");
+  assert.equal((await d.listSkills("sk-bob")).length, 0);
+  const meta = await d.putSkill("sk-bob", "tidy-report", { name: "tidy-report", description: "整理工作区产出报告", body: "把结果写入 REPORT.md。" });
+  assert.deepEqual(meta, { name: "tidy-report", description: "整理工作区产出报告" });
+  assert.deepEqual(await d.listSkills("sk-bob"), [meta]);
+  const file = path.join(bot.workspace, ".dsh", "skills", "tidy-report", "SKILL.md");
+  const text = await readFile(file, "utf8");
+  assert.ok(text.startsWith("---\nname: tidy-report\ndescription: 整理工作区产出报告\n---\n"), "frontmatter 按契约落盘（dsh 可发现形态）");
+  assert.ok(text.includes("把结果写入 REPORT.md。"), "正文原样写入");
+  // 覆盖写 = 幂等 upsert；删除两次收敛为同一终态（无此技能）
+  await d.putSkill("sk-bob", "tidy-report", { name: "tidy-report", description: "改描述", body: "新正文" });
+  assert.equal((await d.listSkills("sk-bob"))[0].description, "改描述");
+  await d.deleteSkill("sk-bob", "tidy-report");
+  await d.deleteSkill("sk-bob", "tidy-report");
+  assert.equal((await d.listSkills("sk-bob")).length, 0);
+  await assert.rejects(() => readFile(file, "utf8"), /ENOENT/, "删除后目录应消失");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("frontmatter 非法拒绝（K3）：大写名/缺 description/name 与 :skill 不匹配/路径穿越", async () => {
+  const { d, stateDir } = await freshDaemon();
+  await d.create("sk-val");
+  await assert.rejects(() => d.putSkill("sk-val", "Tidy-Report", { name: "Tidy-Report", description: "x", body: "" }), /invalid skill name/);
+  await assert.rejects(() => d.putSkill("sk-val", "tidy-report", { name: "tidy-report", description: "   ", body: "" }), /description required/);
+  await assert.rejects(() => d.putSkill("sk-val", "tidy-report", { name: "other-name", description: "x", body: "" }), /mismatch/);
+  await assert.rejects(() => d.putSkill("sk-val", "../escape", { name: "../escape", description: "x", body: "" }), /invalid skill name/);
+  assert.equal((await d.listSkills("sk-val")).length, 0, "全部被拒，不应有任何落盘");
+  // 手写的非法 SKILL.md：与 dsh 发现行为一致（列表跳过），不影响其余技能
+  const root = path.join(stateDir, "bots", "sk-val", "ws", ".dsh", "skills", "broken");
+  await mkdir(root, { recursive: true });
+  await writeFile(path.join(root, "SKILL.md"), "no frontmatter here", "utf8");
+  await d.putSkill("sk-val", "ok-one", { name: "ok-one", description: "好技能", body: "x" });
+  assert.deepEqual((await d.listSkills("sk-val")).map((s) => s.name), ["ok-one"]);
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("git init 容错：git 不可用时降级只建目录，事件注明，技能 CRUD 不受影响", async () => {
+  const { d, stateDir } = await freshDaemon();
+  const origPath = process.env.PATH;
+  process.env.PATH = "";
+  let bot;
+  try {
+    bot = await d.create("sk-nogit");
+  } finally {
+    process.env.PATH = origPath;
+  }
+  assert.ok(bot.workspace.startsWith(path.join(stateDir, "bots", "sk-nogit")));
+  assert.ok(bot.events.some((e) => e.kind === "created" && /git init unavailable/.test(e.detail)), "降级必须在事件注明");
+  await d.putSkill("sk-nogit", "works-anyway", { name: "works-anyway", description: "x", body: "y" });
+  assert.equal((await d.listSkills("sk-nogit"))[0].name, "works-anyway");
+  await rm(stateDir, { recursive: true, force: true });
+});
+
+test("HTTP 层：技能 REST roundtrip（PUT → GET → DELETE）+ 404/400 形态", async () => {
+  const { d, stateDir } = await freshDaemon();
+  const { serveHttp } = await import("../src/daemon.ts");
+  const port = 8820 + Math.floor(Math.random() * 100);
+  const server = await serveHttp(d, port);
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await fetch(base + "/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "websk" }) });
+    const put = await fetch(base + "/bots/websk/skills/calc-tax", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "calc-tax", description: "计算税费", body: "按 13% 计算。" }),
+    });
+    assert.equal(put.status, 200);
+    assert.deepEqual(await put.json(), { name: "calc-tax", description: "计算税费" });
+    assert.deepEqual(await (await fetch(base + "/bots/websk/skills")).json(), [{ name: "calc-tax", description: "计算税费" }]);
+    const bad = await fetch(base + "/bots/websk/skills/BadName", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "BadName", description: "x", body: "" }),
+    });
+    assert.equal(bad.status, 400);
+    const del = await fetch(base + "/bots/websk/skills/calc-tax", { method: "DELETE" });
+    assert.equal(del.status, 200);
+    assert.deepEqual(await (await fetch(base + "/bots/websk/skills")).json(), []);
+    assert.equal((await fetch(base + "/bots/ghost/skills")).status, 404);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    await rm(stateDir, { recursive: true, force: true });
+  }
 });

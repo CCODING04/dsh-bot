@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { recordSync } from "./gate-ledger.mjs";
+import { verifyEvidence } from "./evidence-core.mjs";
 
 const CONVENTIONAL = /^(feat|fix|docs|chore|refactor|test|perf|ci|build|style)(\(.+\))?!?: .+/;
 const GENERATED = /^(Merge|Revert) /;
@@ -132,6 +133,19 @@ function checkReadmeSync() {
     }
     if (allMerged && existsSync(`docs/phase-${n}-report.md`) && boxes.get(n) !== true) {
       // 报告在但勾选不在：5a 已拦，此处不重复
+    }
+  }
+}
+
+/** 检查 8（证据溯源，GAP-007）：仓库内任意路径新增的图片文件必须携带溯源元数据并通过完整性校验
+ *  （全仓库范围 + 大小写不敏感扩展名——收口 reviewer 第七轮 F3 指出的子目录/根目录/大写扩展逃逸）。
+ *  手工构造（无 .meta.json）、哈希不符、或 PNG 字节与溯源哈希不符（换芯）一律拒绝。 */
+function checkEvidenceProvenance(files, { replay }) {
+  const pngs = files.filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f));
+  for (const png of pngs) {
+    const r = verifyEvidence(png, { replay, cwd: process.cwd() });
+    if (!r.ok) {
+      fail(`证据截图 ${path.basename(png)} 未通过溯源校验：${r.reasons.join("；")}——证据必须由 scripts/capture-evidence.mjs 生成`, { rule: "evidence-provenance", severity: "high" });
     }
   }
 }
@@ -335,6 +349,7 @@ if (mode === "pre-commit") {
   checkArchiveCrossRef();
   checkReadmeSync();
   checkDocsDrift(staged);
+  checkEvidenceProvenance(staged, { replay: false });
   // 教程 §5 P0 前置：src/web 调试输出在提交时就拦（PR 层还有一道同款）
   if (staged.some((x) => /^(src|web)\//.test(x))) {
     const addedLines = git("diff", "--cached", "-U0", "--", "src", "web")
@@ -362,6 +377,7 @@ if (mode === "ci") {
   checkArchiveCrossRef();
   checkReadmeSync();
   checkDocsDrift(changed);
+  checkEvidenceProvenance(changed, { replay: false });
   console.log(`[process-gate] 通过：${subjects.length} 条提交信息 / ${tracked.length} 个文件密钥扫描 / Dockerfile / 冲突标记 / 档案交叉引用 / README 里程碑同步 / 行为改动带文档`);
   process.exit(0);
 }

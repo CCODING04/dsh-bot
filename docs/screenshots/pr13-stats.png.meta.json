@@ -1,0 +1,10 @@
+{
+  "kind": "evidence",
+  "command": "node scripts/gate-stats.mjs",
+  "headSha": "507fec4f1b7dfa3f85bdb505bc068528f6d281e6",
+  "at": "2026-11-16T14:25:20.528Z",
+  "exitCode": 0,
+  "outputSha256": "47247e461ed32f127781e3328d4cf003c9b2b8566e6f70b8717fd381e3a76813",
+  "outputText": "== 围栏效能（gate-stats）==\n拦截总数（原始）: 19 ｜ 加权: 29（high=3/medium=2/low=1）\nescape 数: 7 ｜ selftest: 498（不计入生产）\nL2 CI 拦截: 1（30 个 run 扫描）\n分层/分规则：\n  L1·pr-body: 8\n  ?·escape: 7\n  L1·readme-milestone: 4\n  L1·commit-convention: 2\n  L1·secret-shape: 2\n  L3·npm-global: 1\n  L1·conflict-marker: 1\n  L1·evidence-provenance: 1\n\n—— 口径（explain-the-number）——\n1. 分母不可知：未发现的漏网数永远未知，效能比仅为「已发现错误中的拦截率」=19/26（73%），禁止表述为\"预防了 X% 错误\"。\n2. 计数≠质量：原始计数与 severity 加权计数必须同时阅读。\n3. selftest 已剔除：GATE_SELFTEST=1 产生的事件只进 selftest 类。\n4. 层激活状态：L1=本地 hooks 常开；L2=CI 常开；L3=需会话启动时加载 .zcode/config.json（本会话未激活时 L3 计数为 0，不代表失效）。\n",
+  "pngSha256": "7bd1feb7d2923b215ebaf73475fcd1d11d3b3a43d883ba6cff5e446ec3c02589"
+}

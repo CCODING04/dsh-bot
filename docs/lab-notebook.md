@@ -13,6 +13,7 @@
 | EXP-005 | 2026-11-16 | workflow 并行调研 U3 机制 | 🔄 运行中 | run `dwfrun-a4ebd73b…` |
 | EXP-006 | 2026-11-16 | 浏览器 GUI E2E（Web Chat 真实链路） | ✅ 通过 | 本文件 §EXP-006 |
 | EXP-007 | 2026-11-16 | 流程硬约束三层工程 | ✅ 通过（含 1 项时序发现） | `experiments/EXP-007-gates.md` |
+| EXP-008 | 2026-11-16 | U3-1 会话记忆 + --json 驱动（OQ-5 关闭） | ✅ 通过（含首跑顺序 bug 修复） | `experiments/EXP-008-session-memory.md` |
 
 ---
 

@@ -1,7 +1,7 @@
 # U4 多 bot E2E 测试计划（Lauren Tan 方法 × 当下基建）
 
 > 配套 `u4-group-design.md`。方法翻译原则：Lauren 的每条实践 → 一层可机检判据。
-> 全程记 EXP-013（假设/数据/结论），bot 侧 permission_blocked 进遥测台账，E2E 脚本入库 `test/e2e/` 可重复。
+> 全程记 EXP-013（假设/数据/结论），bot 侧 permission_blocked 进遥测审计日志，E2E 脚本入库 `test/e2e/` 可重复。
 
 ## 0.5 操作面约束（硬规则）
 
@@ -48,14 +48,14 @@
 **判据**：reviewer verdict=`request-changes` 且 ≥1 finding 引用真实 file:line 证据；coordinator 触发回环（engineer 修复 → reviewer 重审）；回环 ≤2 轮；终态 `fixed`（修对）或 `needs-rework`（修不对但诚实暴露）——**两者都算通过**，静默 approve 算失败。
 
 ### T-G4 权限与边界（角色≠凭据）
-- reviewer（read-only）brief 里要求写文件 → `permission_blocked` 事件 + 文件未落盘 + 遥测台账有记录
+- reviewer（read-only）brief 里要求写文件 → `permission_blocked` 事件 + 文件未落盘 + 遥测审计日志有记录
 - engineer brief 里要求读 reviewer 工作区文件 → 失败（路径隔离：bot 工作区互不可见，cwd 锚定）
 - bot 调 daemon API 越权端点（DELETE /bots）→ 拒绝（u4-design §4 审计面）
 **判据**：三类越权全部被拦且有记录。
 
 ### T-G5 完整微任务闭环（发布级验收）
 真实小任务：如「给一个玩具模块加 feature + 单测」。三 bot 全自动产出：PR-ready diff（bot 工作区内 `git diff`）+ verdict + 证据。
-**判据（Lauren 式硬验收）**：① diff 应用到干净副本后**真实运行测试通过**（E2E 脚本执行，非采信自述）；② verdict findings 每条可定位；③ 全程台账：token 消耗/时长/回环数记入 EXP-013。
+**判据（Lauren 式硬验收）**：① diff 应用到干净副本后**真实运行测试通过**（E2E 脚本执行，非采信自述）；② verdict findings 每条可定位；③ 全程审计日志：token 消耗/时长/回环数记入 EXP-013。
 
 ### T-G6 无人值守夜跑（对应流程矩阵 T7）
 CronCreate/OffPeak 排程 3 个独立任务的 autopilot-stack 队列（只出 patch 不合并）。

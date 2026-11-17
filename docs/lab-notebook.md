@@ -69,3 +69,12 @@
 - **第二次 dispatch（截断修复后）：rounds=2 → done|rounds=1，reviewer verdict="pass"，独立执行 wc -c/cmp/sha256sum 三项验证，reviewer 与 engineer 实测逐项吻合**
 - 否定回路：reviewer 独立发现路径偏差（coordinator ws 空 vs engineer ws 有产物），2 轮 request-changes → 诚实 needs-rework（架构约束：工作区隔离）
 **结论**：T-G2 正向链路 ✓；T-G3 否定回路 ✓（reviewer 独立拦截 + 回环触发 + 诚实 failed）。parseVerdict 同义词扩展（fail/PASS/reject 等）已验证。遗留：种子缺陷精化（后续单元）。
+
+## EXP-014 · 术语旧称脏语料清扫与机检禁用（GAP-008）
+**假设**：文档中的旧称残留会被回读该文档的子代理原样复用（语料即行为）；清扫不彻底 + 无机检 = 必然复发。
+**方法**：触发事件回溯（reviewer 审查 PR #16 时报告带旧称 → 定位其回读文件）→ 全仓 `git grep` 三类旧称计数 → 二次清扫（机械替换 + 2 处语义敏感手工改写：EXP-012 历史 grep 描述、PR #9 存档映射行）→ 检查 9 术语黑名单机检（pre-commit / ci 扫文本文件、pr 模式扫 PR body；黑名单拆字声明防自匹配）+ 回归样本。
+**数据**：
+- 残留基线：47 行 / 13 文件（`docs/gate-telemetry-plan.md` 18 行最多；`scripts/gate-stats.mjs` 口径页脚为活跃输出 1 处；证据元数据 1 处豁免不可改）
+- 清扫后：`git grep` 仅剩豁免文件（`docs/screenshots/pr13-stats.png.meta.json`）
+- 回归样本集：41 通过 / 0 失败（新增 2 条：PR body 旧称拦截 + 规范术语不误伤）
+**结论**：假设成立——子代理确实回读并复用了文件头旧称。清扫必须四件齐：全词+变体覆盖、grep 验证 0 残留、机检防复发、证据家族豁免声明。黑名单含字面量会自匹配（与密钥排除表同教训），拆字声明是本仓可行解。

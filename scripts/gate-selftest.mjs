@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// gate-selftest.mjs —— 围栏样本电池（gate-telemetry-plan 清单 4）。
+// gate-selftest.mjs —— 围栏回归样本集（gate-telemetry-plan 清单 4）。
 // 全部样本在 GATE_SELFTEST=1 下运行 → 审计日志只落 selftest 类（口径规则 3：自测不计生产指标）。
 // 覆盖：guard-bash stdin 样本（不依赖 git 状态）+ process-gate commit-msg 样本 + 审计日志脱敏断言。
-// 已知局限（诚实标注）：依赖暂存区/git 历史的 pre-commit、ci 样本无法在此电池构造，
+// 已知局限（诚实标注）：依赖暂存区/git 历史的 pre-commit、ci 样本无法在此回归样本集构造，
 // 由 L2 CI（每次 push 重跑真门禁）与 EXP-007/PR 验收手册覆盖。
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const env = { ...process.env, GATE_SELFTEST: "1" };
-const before = ledgerSize(); // 先取基线，样本跑完后的新事件才可归因于本电池
+const before = ledgerSize(); // 先取基线，样本跑完后的新事件才可归因于本回归样本集
 let pass = 0;
 let failCount = 0;
 const t = (name, ok) => {
@@ -81,6 +81,10 @@ t("pr拦：img 标签相对路径逃逸", pr("## Why\n" + '<img src="docs/screen
 t("pr拦：img 标签外域地址", pr("## Why\n" + '<img src="https://example.com/a.png">' + "\n" + FULL + "\n") === 1);
 t("pr放：img 标签 raw 绝对地址", pr("## Why\n" + `<img src="${RAW}">` + "\n" + FULL + "\n") === 0);
 t("pr放：markdown title 语法（可选引号标题不误报）", pr('## Why\nw\n## What changed\nw\n## Scope\nw\n## Verification\n![e](' + RAW + ' "shot")\n') === 0);
+// ---- 术语黑名单（GAP-008：PR body 也是被回读的语料）——样本以拼接构造，避免本文件自匹配检查 9 ----
+const DIRTY = ["台", "账"].join("");
+t("pr拦：PR body 含禁用旧称", pr(FULL + "\n沿用旧" + DIRTY + "口径描述\n") === 1);
+t("pr放：PR body 规范术语不误伤", pr(FULL + "\n审计日志口径已同步\n") === 0);
 // ---- 证据溯源（GAP-007：手工构造内容必须被识破）——直接测 evidence-core 的纯校验函数 ----
 const ev = await import("../scripts/evidence-core.mjs");
 {

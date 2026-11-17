@@ -5,7 +5,7 @@
 //   node scripts/process-gate.mjs commit-msg <msg-file>   # 检查 1
 //   node scripts/process-gate.mjs pre-commit              # 检查 2/3/4/5（暂存区范围 + 全局交叉引用）
 //   node scripts/process-gate.mjs ci [--base <ref>]       # 全部（ref 缺省取 env BASE 或 HEAD~1）
-// 退出码：0 通过；1 拦截（原因打到 stderr）。拦截同步落台账 .gate-ledger/events.jsonl（docs/gate-telemetry-plan.md）。
+// 退出码：0 通过；1 拦截（原因打到 stderr）。拦截同步落审计日志 .gate-ledger/events.jsonl（docs/gate-telemetry-plan.md）。
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -19,8 +19,11 @@ const SECRET_SHAPES = [
   /[0-9a-f]{32}\.[A-Za-z0-9]{12,}/,
   /\bsk-[A-Za-z0-9]{20,}\b/,
 ];
-// 排除表：本脚本与台账脚本自身含正则字面量会自匹配（EXP 教训，plan §2 ⚠️）
+// 排除表：本脚本与审计日志脚本自身含正则字面量会自匹配（EXP 教训，plan §2 ⚠️）
 const SECRET_EXCLUDES = [/^scripts\/process-gate\.mjs$/, /^scripts\/gate-ledger\.mjs$/];
+// 检查 9（术语黑名单，用户 2026-11-17 指令）：口语旧称全仓禁用（GAP-008：脏语料残留致子代理回读复用旧称）。
+// 黑名单以字符拼接声明——避免本文件自匹配（同密钥排除表教训）。规范术语见 AGENTS.md。
+const FORBIDDEN_TERMS = [["台", "账"], ["漏", "网"], ["电", "池"]].map((p) => p.join(""));
 
 const fail = (m, meta) => {
   console.error(`[process-gate] 拦截：${m}`);
@@ -193,6 +196,31 @@ function scanConflictMarkers(files) {
 }
 
 /**
+ * 检查 9（术语黑名单）：文本文件含口语旧称即拦。证据家族豁免——哈希绑定不可改，改=伪造证据（GAP-007）。
+ * @param {string[]} files
+ */
+function scanForbiddenTerms(files) {
+  for (const f of files) {
+    if (/\.meta\.json$/.test(f) || /^docs\/(evidence|screenshots)\//.test(f)) continue;
+    if (!/\.(md|mjs|ts|cjs|json|yml|yaml|html|sh|txt)$/.test(f)) continue;
+    let text;
+    try {
+      text = readFileSync(f, "utf8");
+    } catch {
+      continue;
+    }
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, i) => {
+      for (const term of FORBIDDEN_TERMS) {
+        if (line.includes(term)) {
+          fail(`${f}:${i + 1} 含禁用旧称「${term}」——规范术语见 AGENTS.md（审计日志/逃逸违规/逃逸闭环/回归样本集）；证据家族文件豁免`, { rule: "forbidden-term", severity: "medium" });
+        }
+      }
+    });
+  }
+}
+
+/**
  * 检查 7（PR 写法规范，用户 2026-11-16 定）：六节结构、UI 改动截图认证、
  * 文件引用仅限 codebase 内（反引号路径与链接均须真实存在）、项目内术语编号禁止裸引用。
  * 输入：`pr <number>`（gh pr view）或 `pr --body-file <f> --files <csv>`（旁路，供 selftest）。
@@ -291,6 +319,10 @@ function checkPrBody(rawBody, files, ctx = {}) {
       problems.push(`src/web 新增调试输出 ${hits.length} 处（console.log/debugger，P0 自检项；src/cli.ts 的 stdout 输出豁免）——首行示例：${hits[0].trim().slice(0, 80)}`);
     }
   }
+  // 术语黑名单（GAP-008）：PR body 也是被回读的语料，旧称在此出现同样复发
+  for (const term of FORBIDDEN_TERMS) {
+    if (body.includes(term)) problems.push(`PR body 含禁用旧称「${term}」——规范术语见 AGENTS.md（审计日志/逃逸违规/逃逸闭环/回归样本集）`);
+  }
   if (problems.length) {
     fail(`PR 写法规范 ${problems.length} 处不合规：\n  - ${problems.join("\n  - ")}`, { rule: "pr-body", severity: "low" });
   }
@@ -360,6 +392,7 @@ if (mode === "pre-commit") {
   scanSecrets(staged);
   scanDockerfileSwallow(staged);
   scanConflictMarkers(staged);
+  scanForbiddenTerms(staged);
   checkArchiveCrossRef();
   checkReadmeSync();
   checkDocsDrift(staged);
@@ -388,11 +421,12 @@ if (mode === "ci") {
   scanSecrets(tracked);
   scanDockerfileSwallow(tracked);
   scanConflictMarkers(tracked);
+  scanForbiddenTerms(tracked);
   checkArchiveCrossRef();
   checkReadmeSync();
   checkDocsDrift(changed);
   checkEvidenceProvenance(changed, { replay: false });
-  console.log(`[process-gate] 通过：${subjects.length} 条提交信息 / ${tracked.length} 个文件密钥扫描 / Dockerfile / 冲突标记 / 档案交叉引用 / README 里程碑同步 / 行为改动带文档`);
+  console.log(`[process-gate] 通过：${subjects.length} 条提交信息 / ${tracked.length} 个文件密钥扫描 / Dockerfile / 冲突标记 / 术语黑名单 / 档案交叉引用 / README 里程碑同步 / 行为改动带文档`);
   process.exit(0);
 }
 

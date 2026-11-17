@@ -78,7 +78,7 @@ process.stdin.on("end", async () => {
           trigger: "PreToolUse",
         });
       } catch {
-        // 台账失败不阻断拦截本身
+        // 审计日志失败不阻断拦截本身
       }
       process.exit(2);
     }

@@ -53,6 +53,13 @@
 - **当前防线**：L1 完整性校验（outputText 哈希 + PNG 字节绑定 pngSha256 换芯检测）+ 捕获工具唯一化（agent 无法参与文本撰写）已覆盖「手工构造」与「事后换芯」两类伪造；重放针对的剩余形态是「陈旧证据冒充新运行」——由 meta 的 HEAD/时间戳字段供人工核验
 - **收口条件**：gate-selftest/gate-stats 输出改造为确定性结构化格式（如 --json 固定 schema）后启用重放，届时 SAFE_REPLAY 白名单按命令粒度启用
 
+### GAP-008（2026-11-17）· 术语旧称清扫遗漏，子代理回读脏语料复用旧称
+
+- **逃逸路径**：2026-11-16 术语规范化（一次性清扫脚本，43+ 处替换）只处理了旧称全词形态（样+本+电+池），漏掉变体（此/本/验收 前缀+电+池）与其他三类旧称在注释、计划文档、实验存档中的残留分布（合计 47 行 / 13 文件，含 gate-stats 口径页脚这一活跃输出）；reviewer 子代理审查 PR #16 时按 brief 回读 `scripts/gate-selftest.mjs`，把文件头旧称原样带回审查报告
+- **shouldHaveBeenCaughtBy**：清扫后立即全仓 `git grep` 验证 0 残留（当时只验证了「活跃输出已清扫」，未验证全仓）+ 机检禁用
+- **whyMissed**：清扫脚本按替换执行、无残留断言；黑名单无机检——复发无人拦（脏语料即行为：文档里写什么，回读它的子代理就说什么）
+- **remediation**：全仓二次清扫（本 PR）+ 检查 9 术语黑名单（pre-commit / ci 扫文本文件、pr 模式扫 PR body；黑名单拆字声明防自匹配，同密钥排除表教训）+ 回归样本 2 条；证据家族（`docs/evidence/`、`docs/screenshots/`、`*.meta.json`）豁免——哈希绑定不可改，改=伪造证据（GAP-007 原则）；EXP-014 存档
+
 ### EXP-013（2026-11-17）· T-G2 真 GLM 三 bot 否定回路 E2E
 - **假设**：三职责 dispatch 编排（coordinator→engineer→reviewer）在真 GLM 下可完成正向链路并触发否定回路
 - **方法**：E2E 容器（dsh-bot:e2e-v5，含 parseVerdict 同义词修复 + 截断上限 10000）dispatch 种子任务 → 30s 轮询 → 产物核对

@@ -14,7 +14,7 @@ const md = `## Why
 - 新增 [docs/experiments/EXP-012-reviewer-collab.md](${blob("docs/experiments/EXP-012-reviewer-collab.md")})：三轮审查的任务简报与裁决格式完整方法论，作为 U4「reviewer bot」能力的提炼来源
 - docs/u4-e2e-test-plan.md 与 docs/u4-group-design.md 的实验编号顺延（reviewer 协作占 EXP-012，U4 端到端实测改为 EXP-013）
 - 移除一次性冲突解算脚本 scripts/nb-resolve.cjs（lab-notebook 的 add/add 冲突解算器，用后即弃；此前提交误将其入库，本 PR 修正）
-- 全仓库文档与门禁脚本的用户可见文案术语规范化：审计日志（原「台账」）、回归样本集（原「样本电池」）、逃逸违规（原「漏网」）、逃逸闭环（原「漏网飞轮」）
+- 全仓库文档与门禁脚本的用户可见文案术语规范化：审计日志（原「审计日志」）、回归样本集（原口语旧称已禁用）、逃逸违规（原「逃逸违规」）、逃逸闭环（原「逃逸闭环」）
 
 ## Scope
 

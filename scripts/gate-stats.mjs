@@ -13,7 +13,7 @@ const events = existsSync(".gate-ledger/events.jsonl")
 const prod = events.filter((e) => e.kind === "interception" || e.kind === "escape");
 const selftests = events.filter((e) => e.kind === "selftest");
 
-// L2：gate workflow 失败且失败 step 为 process-gate 的 run（只读聚合，不从 CI 写台账）
+// L2：gate workflow 失败且失败 step 为 process-gate 的 run（只读聚合，不从 CI 写审计日志）
 let l2count = 0;
 let l2note = "gh 不可用";
 try {
@@ -56,7 +56,7 @@ if (byKey.size) {
 }
 console.log(`
 —— 口径（explain-the-number）——
-1. 分母不可知：未发现的漏网数永远未知，效能比仅为「已发现错误中的拦截率」=${ratio}，禁止表述为"预防了 X% 错误"。
+1. 分母不可知：未发现的逃逸违规数永远未知，效能比仅为「已发现错误中的拦截率」=${ratio}，禁止表述为"预防了 X% 错误"。
 2. 计数≠质量：原始计数与 severity 加权计数必须同时阅读。
 3. selftest 已剔除：GATE_SELFTEST=1 产生的事件只进 selftest 类。
 4. 层激活状态：L1=本地 hooks 常开；L2=CI 常开；L3=需会话启动时加载 .zcode/config.json（本会话未激活时 L3 计数为 0，不代表失效）。`);

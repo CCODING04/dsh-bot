@@ -1,0 +1,43 @@
+✔ 拦：docker run 无 --rm/-d/--name
+✔ 放：docker run --rm
+✔ 放：docker run -d --name
+✔ 放：docker compose
+✔ 拦：npm i -g
+✔ 放：npm install 本地
+✔ 拦：docker system prune
+✔ 拦：写 D:/Dev/DSH
+✔ 放：读 DSH + stderr 丢弃
+✔ 拦：mv ~/.dsh
+✔ 放：普通命令
+✔ 拦：非 conventional
+✔ 放：feat:
+✔ 放：Merge 前缀
+✔ 拦：空主题
+✔ pr拦：缺章节
+✔ pr拦：web 改动无截图（全 PR 截图规则）
+✔ pr拦：反引号引用不存在文件
+✔ pr拦：codebase 外链接
+✔ pr拦：术语裸引用（同行无展开）
+✔ pr放：术语带 docs/ 展开
+✔ pr拦：标题超 72
+✔ pr拦：标题模糊
+✔ pr拦：体量 >800
+✔ pr放：体量 450 警告但过
+✔ pr拦：仪式性 Verification（截图在别处，Verification 纯文字）
+✔ pr拦：src 新增调试输出
+✔ pr拦：img 标签相对路径逃逸
+✔ pr拦：img 标签外域地址
+✔ pr放：img 标签 raw 绝对地址
+✔ pr放：markdown title 语法（可选引号标题不误报）
+✔ pr拦：PR body 含禁用旧称
+✔ pr放：PR body 规范术语不误伤
+✔ 证据溯源：无 .meta.json 的手工内容拒绝
+✔ 证据溯源：完好元数据通过
+✔ 证据溯源：文件内容篡改被哈希识破
+✔ 证据溯源：失败运行（exit 1）拒绝作为通过证据
+✔ 证据溯源：恢复后通过
+✔ 审计日志脱敏：bigmodel 形态
+✔ 审计日志脱敏：sk- 形态
+✔ 审计日志 selftest 隔离（20 条新事件）
+
+selftest：41 通过 / 0 失败

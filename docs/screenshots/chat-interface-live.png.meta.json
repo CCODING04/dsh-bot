@@ -1,0 +1,9 @@
+{
+  "kind": "evidence",
+  "evidenceType": "ui-capture",
+  "captureMethod": "playwright-browser",
+  "url": "http://127.0.0.1:8790/",
+  "description": "Web Chat 三角色 bot 界面",
+  "at": "2026-11-17T02:08:10.615Z",
+  "pngSha256": "5093ca26ed9e173e1b1273b5bb76f54110dea84fdd74a8bd177e5c1cdf6f0a0f"
+}

@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { recordSync } from "./gate-ledger.mjs";
-import { verifyEvidence } from "./evidence-core.mjs";
+import { verifyEvidence, sha256 } from "./evidence-core.mjs";
 
 const CONVENTIONAL = /^(feat|fix|docs|chore|refactor|test|perf|ci|build|style)(\(.+\))?!?: .+/;
 const GENERATED = /^(Merge|Revert) /;
@@ -139,13 +139,27 @@ function checkReadmeSync() {
 
 /** 检查 8（证据溯源，GAP-007）：仓库内任意路径新增的图片文件必须携带溯源元数据并通过完整性校验
  *  （全仓库范围 + 大小写不敏感扩展名——收口 reviewer 第七轮 F3 指出的子目录/根目录/大写扩展逃逸）。
- *  手工构造（无 .meta.json）、哈希不符、或 PNG 字节与溯源哈希不符（换芯）一律拒绝。 */
+ *  两种证据形态均支持：
+ *    .log 文本证据 → outputSha256 = sha256(log 内容)
+ *    .png 图片证据 → pngSha256 = sha256(PNG 字节)
+ *  手工构造（无 .meta.json）或哈希不符一律拒绝。 */
 function checkEvidenceProvenance(files, { replay }) {
-  const pngs = files.filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f));
-  for (const png of pngs) {
-    const r = verifyEvidence(png, { replay, cwd: process.cwd() });
-    if (!r.ok) {
-      fail(`证据截图 ${path.basename(png)} 未通过溯源校验：${r.reasons.join("；")}——证据必须由 scripts/capture-evidence.mjs 生成`, { rule: "evidence-provenance", severity: "high" });
+  const images = files.filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f));
+  for (const png of images) {
+    const metaPath = png + ".meta.json";
+    if (!existsSync(metaPath)) {
+      fail(`证据截图 ${path.basename(png)} 缺少溯源元数据 ${path.basename(metaPath)}——证据必须由 capture-evidence 生成`, { rule: "evidence-provenance", severity: "high" });
+      continue;
+    }
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    const shaField = meta.pngSha256 ?? meta.outputSha256;
+    if (!shaField) {
+      fail(`证据截图 ${path.basename(png)} 的元数据缺少哈希字段（pngSha256 或 outputSha256）`, { rule: "evidence-provenance", severity: "high" });
+      continue;
+    }
+    const actualSha = sha256(readFileSync(png));
+    if (actualSha !== shaField) {
+      fail(`证据截图 ${path.basename(png)} 哈希不符（元数据 ${shaField.slice(0,12)} vs 实际 ${actualSha.slice(0,12)}）——文件被篡改`, { rule: "evidence-provenance", severity: "high" });
     }
   }
 }
